@@ -68,39 +68,7 @@ camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 	centerY = viewport.Y / 2
 end)
 
-local debrisFolder = Workspace:FindFirstChild("Debris")
-local fakeCursor = debrisFolder and debrisFolder:FindFirstChild("FakeCursor")
-local fakeCursorAttachment = fakeCursor and fakeCursor:FindFirstChild("Attachment")
-local fakeCursorGui = fakeCursorAttachment and fakeCursorAttachment:FindFirstChild("BillboardGui")
-local frame = fakeCursorGui and fakeCursorGui:FindFirstChild("Frame")
-local uiScale = frame and frame:FindFirstChildOfClass("UIScale")
-local uiStroke = frame and frame:FindFirstChildOfClass("UIStroke")
-
-local frameControlledByStroke = false
-local TOLERANCE = 0.01
-
-if uiStroke then
-	uiStroke:GetPropertyChangedSignal("Thickness"):Connect(function()
-		if not frame then return end
-
-		if math.abs(uiStroke.Thickness - 1.5) <= TOLERANCE then
-			if not frameControlledByStroke then
-				frameControlledByStroke = true
-				frame.Visible = true
-			end
-		else
-			if frameControlledByStroke then
-				frameControlledByStroke = false
-				frame.Visible = false
-			end
-		end
-	end)
-
-	if frame and math.abs(uiStroke.Thickness - 1.5) <= TOLERANCE then
-		frameControlledByStroke = true
-		frame.Visible = true
-	end
-end
+-- [[ SE ELIMINARON LAS REFERENCIAS A DEBRIS, FRAME y UISTROKE DE AQUÍ ]] --
 
 local function toggleShiftLock()
 	if not Active then
@@ -115,9 +83,7 @@ local function toggleShiftLock()
 		ShiftLockButton.Image = States.On
 		ShiftlockCursor.Visible = false
 
-		if frame and not frameControlledByStroke then
-			frame.Visible = false
-		end
+		-- [[ SE ELIMINÓ LA LÓGICA DEL FRAME AQUÍ ]]
 		
 		-- Ya no manipulamos camera.CFrame ni camera.Focus
 
@@ -153,15 +119,7 @@ local function toggleShiftLock()
 		-- Ya no manipulamos camera.CFrame
 		ShiftlockCursor.Visible = false
 
-		if frame then
-			if not frameControlledByStroke then
-				if uiStroke and uiStroke.Thickness ~= 1.5 then
-					frame.Visible = true
-				else
-					frame.Visible = false
-				end
-			end
-		end
+		-- [[ SE ELIMINÓ LA LÓGICA DEL FRAME AQUÍ ]]
 	end
 end
 
