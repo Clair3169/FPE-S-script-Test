@@ -25,7 +25,7 @@ local Folders = {
 
 local MAX = { Teachers = 4, Alices = 2 }
 local MAX_RENDER_DISTANCE = 300
-local CHECK_INTERVAL = 2
+local CHECK_INTERVAL = 4
 
 local BILLBOARD_SIZE = UDim2.new(0,60,0,60)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
@@ -336,22 +336,38 @@ for _, folder in pairs(Folders) do
 	hookFolder(folder)
 end
 
-task.spawn(function()
-	while task.wait(CHECK_INTERVAL) do
-		local localFolder = detectLocalFolder()
-		if localFolder ~= "Students" then
-			for model in pairs(ActiveBillboards) do
-				destroyBillboard(model)
-			end
-		else
-			scanAndApply(localFolder)
+-- Sin escaneo, solo eventos
+LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
+	local localFolder = detectLocalFolder()
+	if localFolder == "Students" then
+		scanAndApply(localFolder)
+	else
+		for model in pairs(ActiveBillboards) do
+			destroyBillboard(model)
 		end
 	end
 end)
 
-task.defer(function()
-	local localFolder = detectLocalFolder()
-	if localFolder == "Students" then
-		scanAndApply(localFolder)
+for _, folder in pairs(Folders) do
+	folder.ChildAdded:Connect(function(child)
+		if not child:IsA("Model") then return end
+		hookModelSignals(child)
+		local localFolder = detectLocalFolder()
+		if localFolder == "Students" then
+			scanAndApply(localFolder)
+		end
+	end)
+
+	folder.ChildRemoved:Connect(function(child)
+		if ActiveBillboards[child] then
+			destroyBillboard(child)
+		end
+	end)
+end
+
+-- Primer escaneo inicial único
+task.delay(0.1, function()
+	if detectLocalFolder() == "Students" then
+		scanAndApply("Students")
 	end
 end)
