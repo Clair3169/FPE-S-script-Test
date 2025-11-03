@@ -1,5 +1,4 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
 local CoreGui = game:GetService("CoreGui")
 local Workspace = game:GetService("Workspace")
@@ -29,8 +28,10 @@ local States = {
 }
 
 local MaxLength = 900000
-local EnabledOffset = CFrame.new(1.7, 0, 0)
-local DisabledOffset = CFrame.new(-1.7, 0, 0)
+-- [[ CAMBIO AQUÍ ]]
+-- Ahora usamos Vector3 para el CameraOffset
+local EnabledOffset = Vector3.new(1.7, 0, 0)
+local DisabledOffset = Vector3.new(0, 0, 0)
 local Active
 
 ShiftLockScreenGui.Name = "Shiftlock (CoreGui)"
@@ -105,52 +106,51 @@ local function toggleShiftLock()
 	if not Active then
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		
-		if not humanoid then return end
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not humanoid or not root then return end
 
 		humanoid.AutoRotate = false
+		humanoid.CameraOffset = EnabledOffset -- [[ CAMBIO CLAVE ]]
+		
 		ShiftLockButton.Image = States.On
 		ShiftlockCursor.Visible = false
 
 		if frame and not frameControlledByStroke then
 			frame.Visible = false
 		end
+		
+		-- Ya no manipulamos camera.CFrame ni camera.Focus
 
-		Active = RunService.RenderStepped:Connect(function()
-			local currentCharacter = player.Character
-			local root = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
-
-			if root then
-				root.CFrame = CFrame.new(
-					root.Position,
-					Vector3.new(
-						camera.CFrame.LookVector.X * MaxLength,
-						root.Position.Y,
-						camera.CFrame.LookVector.Z * MaxLength
-					)
+		local function updateOrientation()
+			if not root then return end
+			root.CFrame = CFrame.new(
+				root.Position,
+				Vector3.new(
+					camera.CFrame.LookVector.X * MaxLength,
+					root.Position.Y,
+					camera.CFrame.LookVector.Z * MaxLength
 				)
-				camera.CFrame = camera.CFrame * EnabledOffset
-				camera.Focus = CFrame.fromMatrix(
-					camera.Focus.Position,
-					camera.CFrame.RightVector,
-					camera.CFrame.UpVector
-				) * EnabledOffset
-			end
-		end)
+			)
+		end
+
+		Active = camera:GetPropertyChangedSignal("CFrame"):Connect(updateOrientation)
+		updateOrientation()
+
 	else
 		pcall(function()
 			Active:Disconnect()
 			Active = nil
 		end)
-		
+
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.AutoRotate = true
+			humanoid.CameraOffset = DisabledOffset -- [[ CAMBIO CLAVE ]]
 		end
-		
+
 		ShiftLockButton.Image = States.Off
-		camera.CFrame = camera.CFrame * DisabledOffset
+		-- Ya no manipulamos camera.CFrame
 		ShiftlockCursor.Visible = false
 
 		if frame then
@@ -175,7 +175,13 @@ if isPC then
 		end
 	end
 
-	ContextActionService:BindAction("CustomShiftLockToggle", handleKeyInput, false, Enum.KeyCode.LeftControl, Enum.KeyCode.RightControl)
+	ContextActionService:BindAction(
+		"CustomShiftLockToggle",
+		handleKeyInput,
+		false,
+		Enum.KeyCode.LeftControl,
+		Enum.KeyCode.RightControl
+	)
 else
 	ShiftLockButton.MouseButton1Click:Connect(toggleShiftLock)
 end
