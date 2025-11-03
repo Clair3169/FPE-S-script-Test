@@ -75,7 +75,7 @@ local function getOrCreateBillboard(character)
 	local image = Instance.new("ImageLabel")
 	image.BackgroundTransparency = 1
 	image.Size = UDim2.new(1, 0, 1, 0)
-	image.Image = "rbxassetid://129702264151627"
+	image.Image = "rbxassetid://126500139798475"
 	image.Parent = billboard
 
 	activeBillboards[character] = billboard
