@@ -41,7 +41,7 @@ end
 -- Función para cargar scripts desde URL (solo si no se ha ejecutado antes)
 local function loadOnce()
 	if hasExecuted() then
-		warn("⚠️ Los scripts ya fueron cargados anteriormente.")
+		warn("⚠️ El script ya esta cargado.")
 		return
 	end
 
@@ -57,7 +57,7 @@ local function loadOnce()
 				if not runSuccess then
 					warn("❌ Error ejecutando script desde URL:", url, "\n", err)
 				else
-					print("✅ Script cargado exitosamente:", url)
+					-- print("✅ Script cargado exitosamente")
 				end
 			else
 				warn("⚠️ No se pudo obtener el script desde:", url)
