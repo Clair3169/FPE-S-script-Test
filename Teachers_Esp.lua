@@ -45,13 +45,36 @@ local CIRCLE_ENRAGED_ID = "108867117884833"
 local ActiveBillboards = {} -- model -> { gui = BillboardGui, folder = "Teachers"/"Alices" }
 local ActiveCounts = { Teachers = 0, Alices = 0 }
 
--- Utility: get folder (Model parent) name for a given model
-local function getModelFolderName(model)
-	if not model or not model.Parent then return nil end
-	local p = model.Parent
-	for name, folder in pairs(Folders) do
-		if folder == p then return name end
+-- Reemplazar la función getImageIdForModel existente por esta:
+local function getImageIdForModel(model)
+	if not model then return nil end
+	local tname = model:GetAttribute("TeacherName")
+	if not tname then return nil end
+
+	-- Teachers
+	if tname == "Bloomie" then
+		return BASE_IDS.Bloomie
 	end
+	if tname == "Circle" then
+		-- Leer Enraged desde Attributes (bool) en vez de buscar BoolValue hijo
+		local enragedAttr = model:GetAttribute("Enraged")
+		if enragedAttr == true then
+			return CIRCLE_ENRAGED_ID
+		end
+		return BASE_IDS.Circle
+	end
+	if tname == "Thavel" then
+		return BASE_IDS.Thavel
+	end
+
+	-- Alices
+	if tname == "Alice" then
+		return BASE_IDS.Alice
+	end
+	if tname == "AlicePhase2" then
+		return BASE_IDS.AlicePhase2
+	end
+
 	return nil
 end
 
