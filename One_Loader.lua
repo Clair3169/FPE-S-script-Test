@@ -3,9 +3,19 @@
 
 -- CONFIGURACIÓN
 local urls = {
-	"https://example.com/script1.lua",
-	"https://example.com/script2.lua",
-	-- Agrega más URLs aquí fácilmente.
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Welcome_Script.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Anti_Blackout.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Delete_Areas.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/JumpPower_Perma.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Key_notification.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/AimBot.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Stamina_INF.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Stundents_Esp.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Teachers_Esp.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Time.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Visual_Enraged.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/SprintFake.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/TextLabel.lua"
 }
 
 -- NOMBRE DE LA MARCA PARA RECORDAR QUE YA SE EJECUTÓ
