@@ -5,8 +5,8 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
-local MIN_ZOOM = 6
-local MAX_ZOOM = 13
+local MIN_ZOOM = 4
+local MAX_ZOOM = 4
 
 -- Estado
 local isAlicePhase2 = false
