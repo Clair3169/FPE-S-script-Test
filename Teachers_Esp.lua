@@ -44,7 +44,7 @@ local CIRCLE_ENRAGED_ID = "108867117884833"
 
 -- Cache
 local ActiveBillboards = {}
-local ActiveCounts = { Teachers = 0, Alices = 0 }
+local ActiveCounts = { Teachers = 4, Alices = 2 }
 
 -- Obtener imagen según atributos del modelo
 local function getImageIdForModel(model)
