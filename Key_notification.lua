@@ -13,9 +13,9 @@ bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yess!!" then
 		hasThirdPerson.Value = true
 		-- Tercera persona
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/3rd_Person.lua", true))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/3rd_Person.lua", true))()
 		-- Shift Lock
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Shiftlock.lua", true))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Shiftlock.lua", true))()
 	elseif buttonClicked == "Nha" then
 		hasThirdPerson.Value = false
 	end
