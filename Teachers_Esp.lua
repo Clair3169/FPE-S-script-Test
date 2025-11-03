@@ -24,10 +24,10 @@ local Folders = {
 }
 
 local MAX = { Teachers = 4, Alices = 2 }
-local MAX_RENDER_DISTANCE = 300
+local MAX_RENDER_DISTANCE = 250
 local CHECK_INTERVAL = 4
 
-local BILLBOARD_SIZE = UDim2.new(0,60,0,60)
+local BILLBOARD_SIZE = UDim2.new(0,45,0,45)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
 
 -- Imagen base
