@@ -64,7 +64,7 @@ local function getOrCreateBillboard(character)
 	-- Crear nuevo BillboardGui
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = cacheName
-	billboard.Size = UDim2.new(0, 90, 0, 90)
+	billboard.Size = UDim2.new(0, 45, 0, 45)
 	billboard.StudsOffset = Vector3.new(0, 3, 0)
 	billboard.AlwaysOnTop = true
 	billboard.Enabled = false
