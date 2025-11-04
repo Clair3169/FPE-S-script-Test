@@ -1,5 +1,3 @@
--- LocalScript (puedes ejecutar en la Command Bar o como GUI script)
-
 local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer or Players:GetPlayers()[1]
@@ -34,6 +32,15 @@ local quietHalls = base:WaitForChild("QuietHalls")
 local properBehavior = base:WaitForChild("ProperBehavior")
 local studentSound = phase2:WaitForChild("Student")
 
+-- [[ ¡AQUÍ ESTÁ LA SOLUCIÓN! ]]
+-- En esta tabla, defines cuántos segundos quieres "recortar" del final de cada música.
+-- ¡Puedes cambiar estos valores como quieras!
+local soundOffsets = {
+	[quietHalls] = 0,     -- Ejemplo: Resta 3.5 segundos al total de quietHalls
+	[properBehavior] = 3,  -- Ejemplo: Resta 2 segundos al total de properBehavior
+	[studentSound] = 0     -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
+}
+
 -- Función de formato MM:SS
 local function formatTime(seconds)
 	local minutes = math.floor(seconds / 60)
@@ -67,7 +74,19 @@ task.spawn(function()
 		end
 
 		if activeSound then
-			local remaining = math.max(activeSound.TimeLength - activeSound.TimePosition, 0)
+			-- [[ MODIFICACIÓN DEL CÁLCULO ]]
+			
+			-- 1. Obtenemos el descuento de tiempo para la canción actual (0 si no está en la tabla)
+			local offset = soundOffsets[activeSound] or 0
+			
+			-- 2. Calculamos la duración "efectiva" restando ese descuento
+			local effectiveTimeLength = activeSound.TimeLength - offset
+			
+			-- 3. Calculamos el tiempo restante usando la nueva duración efectiva
+			local remaining = math.max(effectiveTimeLength - activeSound.TimePosition, 0)
+			
+			-- [[ FIN DE LA MODIFICACIÓN ]]
+
 			label.Text = formatTime(remaining)
 
 			-- Cambiar color cuando queden <= 25s
