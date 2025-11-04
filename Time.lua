@@ -36,10 +36,11 @@ local studentSound = phase2:WaitForChild("Student")
 -- En esta tabla, defines cuántos segundos quieres "recortar" del final de cada música.
 -- ¡Puedes cambiar estos valores como quieras!
 -- para retar minutos es escribir un calculo (2 * 60) + 13, 2 min con 13 segundos
+-- (-- * 60) + --
 local soundOffsets = {
 	[quietHalls] = 0,     -- Ejemplo: Resta 3.5 segundos al total de quietHalls
 	[properBehavior] = 4,  -- Ejemplo: Resta 2 segundos al total de properBehavior
-	[studentSound] = (1 * 60) +  25    -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
+	[studentSound] = 25    -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
 }
 
 -- Función de formato MM:SS
