@@ -39,15 +39,16 @@ local studentSound = phase2:WaitForChild("Student")
 -- (-- * 60) + --
 local soundOffsets = {
 	[quietHalls] = 0,     -- Ejemplo: Resta 3.5 segundos al total de quietHalls
-	[properBehavior] = 4,  -- Ejemplo: Resta 2 segundos al total de properBehavior
+	[properBehavior] = 5,  -- Ejemplo: Resta 2 segundos al total de properBehavior
 	[studentSound] = 15    -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
 }
 
--- Función de formato MM:SS
+-- Función de formato M:SS (MODIFICADA)
 local function formatTime(seconds)
 	local minutes = math.floor(seconds / 60)
 	local secs = math.floor(seconds % 60)
-	return string.format("%02d:%02d", minutes, secs)
+	-- Se cambió %02d por %d para los minutos
+	return string.format("%d:%02d", minutes, secs) 
 end
 
 -- Esperar hasta que los sonidos tengan duración
