@@ -39,7 +39,7 @@ local studentSound = phase2:WaitForChild("Student")
 local soundOffsets = {
 	[quietHalls] = 0,     -- Ejemplo: Resta 3.5 segundos al total de quietHalls
 	[properBehavior] = 4,  -- Ejemplo: Resta 2 segundos al total de properBehavior
-	[studentSound] = 0     -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
+	[studentSound] = (2 * 60) +  25    -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
 }
 
 -- Función de formato MM:SS
