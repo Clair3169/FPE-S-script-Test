@@ -19,7 +19,7 @@ label.BackgroundTransparency = 1
 label.TextColor3 = Color3.fromRGB(255, 255, 255)
 label.TextScaled = true
 label.Font = Enum.Font.GothamBold
-label.Text = "--:--"
+label.Text = "-:--"
 label.Visible = true
 label.Parent = screenGui
 
