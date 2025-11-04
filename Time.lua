@@ -93,7 +93,7 @@ task.spawn(function()
 
 			-- Cambiar color cuando queden <= 25s
 			if remaining <= 25 then
-				label.TextColor3 = Color3.fromRGB(139, 0, 0)
+				label.TextColor3 = Color3.fromRGB(255, 0, 0)
 			else
 				label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			end
