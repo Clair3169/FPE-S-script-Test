@@ -1,32 +1,69 @@
--- 📜 Script: Etiquetas "Script in beta" y "Ctrl = InfStamina" (versión final)
+-- 📜 Script: Contador de jugadores + Diálogos súper compactos (Versión final, siempre encima)
 
--- Crear la interfaz principal (ScreenGui)
+-- Servicios
+local players = game:GetService("Players")
+local localPlayer = players.LocalPlayer
+
+-- Crear la interfaz principal
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "StatusLabels"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
-screenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+screenGui.DisplayOrder = 100 -- 👈 Siempre encima de todo
+screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
--- Función para crear etiquetas
+-- Función para crear etiquetas de texto
 local function createLabel(text, color, position)
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(0, 200, 0, 22)
+	label.Size = UDim2.new(0, 200, 0, 20) -- compacto
 	label.Position = position
 	label.AnchorPoint = Vector2.new(0, 1)
-	label.BackgroundTransparency = 1 -- 🔹 Fondo totalmente invisible
+	label.BackgroundTransparency = 1
 	label.BorderSizePixel = 0
 	label.Text = text
 	label.TextColor3 = color
-	label.TextTransparency = 0.5 -- 🔹 Texto semitransparente
+	label.TextTransparency = 0.9
 	label.TextScaled = true
 	label.Font = Enum.Font.SourceSansBold
-	label.TextStrokeTransparency = 1 -- 🔹 Sin contorno
+	label.TextStrokeTransparency = 1
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextYAlignment = Enum.TextYAlignment.Bottom
 	label.Parent = screenGui
 	return label
 end
 
--- Crear las dos etiquetas con tus posiciones exactas
-local greenLabel = createLabel("", Color3.fromRGB(0, 255, 0), UDim2.new(0, 5, 1, -15))
-local redLabel = createLabel("Test", Color3.fromRGB(255, 0, 0), UDim2.new(0, 5, 1, 0))
+-- ============================================================
+-- 🔹 Contador de Jugadores
+-- ============================================================
+
+local playerCountLabel = createLabel("Jugadores: 0", Color3.fromRGB(255, 0, 0), UDim2.new(0, 2, 1, 0))
+playerCountLabel.Name = "PlayerCountLabel"
+
+local function updatePlayerCount()
+	local totalPlayers = #players:GetPlayers()
+	playerCountLabel.Text = "Jugadores: " .. totalPlayers
+end
+
+players.PlayerAdded:Connect(updatePlayerCount)
+players.PlayerRemoving:Connect(updatePlayerCount)
+updatePlayerCount()
+
+-- ============================================================
+-- 🔹 Diálogos estáticos (encima del contador, bien pegados)
+-- ============================================================
+
+local dialogueConfig = {
+	{text = "Script en beta", color = Color3.fromRGB(255, 255, 0)},
+	{text = "Este es otro diálogo", color = Color3.fromRGB(0, 255, 255)},
+	-- {text = "Otro más", color = Color3.fromRGB(255, 0, 255)},
+}
+
+-- Base justo encima del contador
+local baseY = -15 -- justo encima de “Jugadores”
+local offset = 18 + 1 -- altura del texto + 1 píxel de separación mínima
+
+-- Crear cada diálogo, apilándolos hacia arriba
+for i, config in ipairs(dialogueConfig) do
+	local posY = baseY - ((i - 1) * offset)
+	createLabel(config.text, config.color, UDim2.new(0, 2, 1, posY))
+end
