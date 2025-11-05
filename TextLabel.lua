@@ -9,7 +9,7 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "StatusLabels"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
-screenGui.DisplayOrder = 100 -- 👈 Siempre encima de todo
+screenGui.DisplayOrder = 50 -- 👈 Siempre encima de todo
 screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 -- Función para crear etiquetas de texto
@@ -22,7 +22,7 @@ local function createLabel(text, color, position)
 	label.BorderSizePixel = 0
 	label.Text = text
 	label.TextColor3 = color
-	label.TextTransparency = 0.9
+	label.TextTransparency = 0.2
 	label.TextScaled = true
 	label.Font = Enum.Font.SourceSansBold
 	label.TextStrokeTransparency = 1
@@ -53,8 +53,8 @@ updatePlayerCount()
 -- ============================================================
 
 local dialogueConfig = {
-	{text = "Script en beta", color = Color3.fromRGB(255, 255, 0)},
-	{text = "Este es otro diálogo", color = Color3.fromRGB(0, 255, 255)},
+	{text = "", color = Color3.fromRGB(255, 255, 0)},
+	{text = "", color = Color3.fromRGB(0, 255, 255)},
 	-- {text = "Otro más", color = Color3.fromRGB(255, 0, 255)},
 }
 
