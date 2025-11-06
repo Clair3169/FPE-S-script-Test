@@ -36,7 +36,7 @@ end
 -- 🔹 Contador de Jugadores
 -- ============================================================
 
-local playerCountLabel = createLabel("Players: 0", Color3.fromRGB(255, 0, 0), UDim2.new(0, 2, 1, 0))
+local playerCountLabel = createLabel("Players: 0", Color3.fromRGB(0, 255, 0), UDim2.new(0, 2, 1, 0))
 playerCountLabel.Name = "PlayerCountLabel"
 
 local function updatePlayerCount()
