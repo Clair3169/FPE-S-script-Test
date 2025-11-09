@@ -59,7 +59,7 @@ task.spawn(function()
 			player.CameraMinZoomDistance = ALICE_MIN_ZOOM
 			player.CameraMaxZoomDistance = ALICE_MAX_ZOOM
 			forceThirdPerson()
-			task.delay(12, function() aliceFree = true end)
+			task.delay(15, function() aliceFree = true end)
 
 		elseif not isAlicePhase2 then
 			aliceFree = false
