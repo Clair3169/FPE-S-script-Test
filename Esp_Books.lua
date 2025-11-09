@@ -7,7 +7,7 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 
 local IMAGE_ID = "rbxassetid://17537434140"
-local RENDER_DISTANCE = 150
+local RENDER_DISTANCE = 180
 local BILLBOARD_SIZE = UDim2.new(2.5, 0, 2.5, 0) -- tamaño mediano
 
 local billboards = {}
@@ -79,9 +79,15 @@ local function connectBookEvents()
 
 	booksFolder.ChildRemoved:Connect(function(child)
 		removeBillboard(child)
-		if #booksFolder:GetChildren() == 0 then
-			clearAll()
-		end
+		-- [[ CAMBIO REALIZADO ]]
+		-- La siguiente comprobación es redundante.
+		-- Si se elimina el último libro, removeBillboard(child) lo limpiará.
+		-- Si se elimina la carpeta "Books" entera, el evento de Workspace.ChildRemoved
+		-- llamará a clearAll() de todos modos.
+		-- 
+		-- if #booksFolder:GetChildren() == 0 then
+		-- 	clearAll()
+		-- end
 	end)
 
 	activateBooks()
