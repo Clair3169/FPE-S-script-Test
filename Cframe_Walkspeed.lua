@@ -7,7 +7,7 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 -- ==== CONFIGURACIÓN ====
-local FakeSpeed = 127           -- velocidad visual (aparente)
+local FakeSpeed = 125           -- velocidad visual (aparente)
 local MoveSmoothness = 0.15    -- 0.05 = muy rápido, 0.25 = más suave
 -- ========================
 
