@@ -1,4 +1,4 @@
-task.wait(15)
+task.wait()
 
 local player = game.Players.LocalPlayer
 local StarterGui = game:GetService("StarterGui")
@@ -6,8 +6,7 @@ local StarterGui = game:GetService("StarterGui")
 local bindableFunction = Instance.new("BindableFunction")
 bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yess!!" then
-		loadstring(game:HttpGet("", true))()
-    -- aqui va el loader
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Cframe_Walkspeed.lua", true))()
 	elseif buttonClicked == "Nha" then
 		-- no se hace nada
 	end
