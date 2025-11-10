@@ -1,3 +1,5 @@
+task.wait(4)
+
 local player = game.Players.LocalPlayer
 local StarterGui = game:GetService("StarterGui")
 
