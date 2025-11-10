@@ -8,7 +8,7 @@ local player = Players.LocalPlayer
 
 -- ==== CONFIGURACIÓN ====
 local FakeSpeed = 120           -- velocidad visual (aparente)
-local MoveSmoothness = 0.12    -- 0.05 = muy rápido, 0.25 = más suave
+local MoveSmoothness = 0.15    -- 0.05 = muy rápido, 0.25 = más suave
 -- ========================
 
 local char, hrp, humanoid
