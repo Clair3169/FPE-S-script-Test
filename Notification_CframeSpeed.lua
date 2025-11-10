@@ -13,11 +13,11 @@ bindableFunction.OnInvoke = function(buttonClicked)
 end
 
 StarterGui:SetCore("SendNotification", {
-	Title = "HEY!",
-	Text = "Do you want to activate Walkspeed? If you choose yes, you will not be able to return to your normal speed.",
+	Title = "Hey again!",
+	Text = "Do you want to activate speed mode?",
 	Icon = "rbxassetid://97207642508375",
 	Duration = 20,
 	Callback = bindableFunction,
-	Button1 = "Yess!!",
-	Button2 = "Nha"
+	Button1 = "Yes",
+	Button2 = "No"
 })
