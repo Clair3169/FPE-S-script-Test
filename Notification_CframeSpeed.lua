@@ -5,9 +5,9 @@ local StarterGui = game:GetService("StarterGui")
 
 local bindableFunction = Instance.new("BindableFunction")
 bindableFunction.OnInvoke = function(buttonClicked)
-	if buttonClicked == "Yess!!" then
+	if buttonClicked == "Yes" then
 		loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Cframe_Walkspeed.lua", true))()
-	elseif buttonClicked == "Nha" then
+	elseif buttonClicked == "No" then
 		-- no se hace nada
 	end
 end
