@@ -1,53 +1,56 @@
--- LocalScript: Fake WalkSpeed usando CFrame (cliente)
--- Simula velocidad aumentada sin modificar WalkSpeed real
+-- LocalScript: Fake CFrame WalkSpeed (optimizado, sin mover cámara)
+-- Simula un WalkSpeed visual usando CFrame local sin afectar al servidor
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
-local char = player.Character or player.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
-local humanoid = char:WaitForChild("Humanoid")
 
 -- ==== CONFIGURACIÓN ====
-local FakeSpeed = 150        -- velocidad visual (WalkSpeed falsa)
-local Smoothness = 0.15     -- entre 0.05 y 0.25 (menor = más responsivo, mayor = más suave)
-local UseCameraShake = false
-local CameraShakeMagnitude = 0.25
+local FakeSpeed = 120           -- velocidad visual (aparente)
+local MoveSmoothness = 0.12    -- 0.05 = muy rápido, 0.25 = más suave
 -- ========================
 
-local lastPos = hrp.Position
-local camera = workspace.CurrentCamera
+local char, hrp, humanoid
+local moving = false
+local connStep, connMove
 
--- Función simple de cámara shake
-local function cameraShake()
-	local t = tick() * 50
-	local amp = CameraShakeMagnitude
-	local x = math.sin(t) * amp * 0.3
-	local y = math.cos(t * 1.7) * amp * 0.2
-	return CFrame.new(x, y, 0)
+-- Función principal para configurar el personaje
+local function setupCharacter(c)
+	char = c
+	hrp = c:WaitForChild("HumanoidRootPart")
+	humanoid = c:WaitForChild("Humanoid")
+
+	-- Desconectar conexiones anteriores si las hubiera
+	if connStep then connStep:Disconnect() end
+	if connMove then connMove:Disconnect() end
+
+	-- Detectar cuando el jugador empieza o deja de moverse
+	connMove = humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+		moving = humanoid.MoveDirection.Magnitude > 0
+	end)
+
+	-- Aplicar movimiento visual solo cuando haya movimiento real
+	connStep = RunService.RenderStepped:Connect(function(dt)
+		if not moving or not hrp or not humanoid then return end
+
+		local dir = humanoid.MoveDirection
+		if dir.Magnitude == 0 then return end
+
+		-- Calcular desplazamiento visual
+		local moveDist = FakeSpeed * dt
+		local newPos = hrp.Position + dir * moveDist
+
+		-- Aplicar suavizado y orientación del cuerpo
+		local newCFrame = hrp.CFrame:Lerp(CFrame.new(newPos, newPos + hrp.CFrame.LookVector), MoveSmoothness)
+		hrp.CFrame = newCFrame
+	end)
 end
 
--- Movimiento visual continuo
-RunService.RenderStepped:Connect(function(dt)
-	if not hrp or not humanoid or humanoid.MoveDirection.Magnitude == 0 then
-		lastPos = hrp.Position
-		return
-	end
+-- Reiniciar automáticamente cuando el jugador reaparece
+player.CharacterAdded:Connect(setupCharacter)
+if player.Character then
+	setupCharacter(player.Character)
+end
 
-	-- dirección actual de movimiento
-	local dir = humanoid.MoveDirection
-	local moveDist = FakeSpeed * dt
-	local newPos = hrp.Position + dir * moveDist
-
-	-- CFrame nuevo con interpolación para suavidad
-	local newCFrame = hrp.CFrame:Lerp(CFrame.new(newPos, newPos + hrp.CFrame.LookVector), Smoothness)
-	hrp.CFrame = newCFrame
-
-	if UseCameraShake then
-		camera.CFrame *= cameraShake()
-	end
-
-	lastPos = hrp.Position
-end)
-
-print("[Fake WalkSpeed CFrame] activo - velocidad visual:", FakeSpeed)
+print("[Fake WalkSpeed CFrame] activo – cámara sin modificar, velocidad visual:", FakeSpeed)
