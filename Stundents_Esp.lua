@@ -4,6 +4,7 @@ repeat task.wait() until game:IsLoaded()
 -- ⚙️ Servicios
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 -- 👤 Jugador local
 local localPlayer = Players.LocalPlayer
@@ -17,6 +18,7 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
 local UPDATE_THRESHOLD = 5 -- distancia mínima para actualizar
+local UPDATE_INTERVAL = 0.25 -- segundos entre chequeos
 local systemActive = false
 
 -- 🧠 Estado interno
@@ -164,37 +166,37 @@ local function updateSystemStatus(force)
 end
 
 ------------------------------------------------------
--- 🧩 Eventos de Students dinámicos
+-- 🧩 Eventos dinámicos
 ------------------------------------------------------
 
 studentsFolder.ChildAdded:Connect(function(child)
 	if not child:IsA("Model") or child == localPlayer.Character then return end
-	getOrCreateBillboard(child)
+	task.defer(function()
+		getOrCreateBillboard(child)
+		if systemActive then
+			updateVisibleStudents()
+		end
 
-	if systemActive then
-		updateVisibleStudents()
-	end
+		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
+		if head and not head:FindFirstChild("__StudentHooked") then
+			local marker = Instance.new("BoolValue")
+			marker.Name = "__StudentHooked"
+			marker.Parent = head
 
-	local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
-	if head and not head:FindFirstChild("__StudentHooked") then
-		local marker = Instance.new("BoolValue")
-		marker.Name = "__StudentHooked"
-		marker.Parent = head
+			head:GetPropertyChangedSignal("Position"):Connect(function()
+				if systemActive then
+					updateVisibleStudents()
+				end
+			end)
 
-		head:GetPropertyChangedSignal("Position"):Connect(function()
-			if systemActive then
-				updateVisibleStudents()
-			end
-		end)
-
-		-- 🔹 Mantiene el Adornee si se recrea el Head
-		child.ChildAdded:Connect(function(obj)
-			if obj.Name == "Head" or obj:IsA("BasePart") then
-				local bb = activeBillboards[child]
-				if bb then ensureAdornee(child, bb) end
-			end
-		end)
-	end
+			child.ChildAdded:Connect(function(obj)
+				if obj.Name == "Head" or obj:IsA("BasePart") then
+					local bb = activeBillboards[child]
+					if bb then ensureAdornee(child, bb) end
+				end
+			end)
+		end
+	end)
 end)
 
 studentsFolder.ChildRemoved:Connect(function(child)
@@ -236,6 +238,15 @@ if localPlayer.Character then
 	onCharacterAdded(localPlayer.Character)
 end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+------------------------------------------------------
+-- 🧩 Actualización periódica liviana
+------------------------------------------------------
+RunService.Stepped:Connect(function(_, dt)
+	if not systemActive then return end
+	updateVisibleStudents()
+	task.wait(UPDATE_INTERVAL)
+end)
 
 ------------------------------------------------------
 -- 🧩 Inicialización segura
