@@ -1,4 +1,4 @@
--- 🧿 Student Image Highlighter (BillboardGui optimizado final)
+-- 🧿 Student Image Highlighter (BillboardGui Optimizado Final y Estable)
 repeat task.wait() until game:IsLoaded()
 
 -- ⚙️ Servicios
@@ -9,17 +9,17 @@ local Workspace = game:GetService("Workspace")
 local localPlayer = Players.LocalPlayer
 if not localPlayer then return end
 
--- 📂 Carpetas
+-- 📂 Carpetas principales
 local studentsFolder = Workspace:WaitForChild("Students")
 local VALID_FOLDERS = { "Alices", "Teachers" }
 
 -- ⚙️ Configuración
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 5 -- distancia mínima para volver a recalcular
+local UPDATE_THRESHOLD = 5 -- distancia mínima para actualizar
 local systemActive = false
 
--- 🧠 Estado
+-- 🧠 Estado interno
 local activeBillboards = {}
 local visibleStudents = {}
 local billboardCache = Workspace:FindFirstChild("BillboardCache_Students") or Instance.new("Folder")
@@ -27,16 +27,21 @@ billboardCache.Name = "BillboardCache_Students"
 billboardCache.Parent = Workspace
 
 ------------------------------------------------------
--- 🧩 Utilidades
+-- 🔧 Utilidades
 ------------------------------------------------------
 
 local function getModelPosition(model)
 	if not model or not model:IsA("Model") then return nil end
 	if model.PrimaryPart then return model.PrimaryPart.Position end
-	for _, part in ipairs(model:GetChildren()) do
-		if part:IsA("BasePart") then
-			return part.Position
-		end
+	local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+	return head and head.Position
+end
+
+local function ensureAdornee(character, billboard)
+	if not character or not billboard then return end
+	local head = character:FindFirstChild("Head") or character:FindFirstChildWhichIsA("BasePart")
+	if head and billboard.Adornee ~= head then
+		billboard.Adornee = head
 	end
 end
 
@@ -48,7 +53,7 @@ local function getOrCreateBillboard(character)
 	local cached = billboardCache:FindFirstChild(cacheName)
 
 	if cached and cached:IsA("BillboardGui") then
-		cached.Adornee = character:FindFirstChild("Head") or character:FindFirstChildWhichIsA("BasePart")
+		ensureAdornee(character, cached)
 		cached.Enabled = false
 		activeBillboards[character] = cached
 		return cached
@@ -61,6 +66,7 @@ local function getOrCreateBillboard(character)
 	billboard.AlwaysOnTop = true
 	billboard.Enabled = false
 	billboard.LightInfluence = 0
+	billboard.MaxDistance = MAX_DISTANCE
 	billboard.Adornee = character:FindFirstChild("Head") or character:FindFirstChildWhichIsA("BasePart")
 	billboard.Parent = billboardCache
 
@@ -68,6 +74,7 @@ local function getOrCreateBillboard(character)
 	image.BackgroundTransparency = 1
 	image.Size = UDim2.new(1, 0, 1, 0)
 	image.Image = "rbxassetid://126500139798475"
+	image.ScaleType = Enum.ScaleType.Fit
 	image.Parent = billboard
 
 	activeBillboards[character] = billboard
@@ -77,6 +84,7 @@ end
 local function updateBillboardState(character, state)
 	local bb = getOrCreateBillboard(character)
 	if not bb then return end
+	ensureAdornee(character, bb)
 	bb.Enabled = state
 end
 
@@ -92,7 +100,7 @@ local function isInValidFolder()
 end
 
 ------------------------------------------------------
--- 🧩 Actualización de visibilidad
+-- 📡 Visibilidad de los Students
 ------------------------------------------------------
 
 local function updateVisibleStudents()
@@ -123,12 +131,14 @@ local function updateVisibleStudents()
 		newVisible[distances[i][1]] = true
 	end
 
+	-- 🔹 Desactivar los que ya no deben estar visibles
 	for student in pairs(visibleStudents) do
 		if not newVisible[student] then
 			updateBillboardState(student, false)
 		end
 	end
 
+	-- 🔹 Activar los nuevos visibles
 	for student in pairs(newVisible) do
 		if not visibleStudents[student] then
 			updateBillboardState(student, true)
@@ -154,7 +164,7 @@ local function updateSystemStatus(force)
 end
 
 ------------------------------------------------------
--- 🧩 Conexión de eventos dinámicos
+-- 🧩 Eventos de Students dinámicos
 ------------------------------------------------------
 
 studentsFolder.ChildAdded:Connect(function(child)
@@ -174,6 +184,14 @@ studentsFolder.ChildAdded:Connect(function(child)
 		head:GetPropertyChangedSignal("Position"):Connect(function()
 			if systemActive then
 				updateVisibleStudents()
+			end
+		end)
+
+		-- 🔹 Mantiene el Adornee si se recrea el Head
+		child.ChildAdded:Connect(function(obj)
+			if obj.Name == "Head" or obj:IsA("BasePart") then
+				local bb = activeBillboards[child]
+				if bb then ensureAdornee(child, bb) end
 			end
 		end)
 	end
@@ -220,7 +238,7 @@ end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
 
 ------------------------------------------------------
--- 🧩 Inicialización de caché segura
+-- 🧩 Inicialización segura
 ------------------------------------------------------
 
 for _, student in ipairs(studentsFolder:GetChildren()) do
