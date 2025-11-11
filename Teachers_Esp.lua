@@ -1,26 +1,38 @@
 -- 🟦 LocalScript Optimizado: Teachers/Alices -> BillboardGui (Students only)
--- Colócalo en StarterPlayerScripts
+-- Con soporte completo para reinicios, sin FPS drops, ni pérdida de eventos.
 
 repeat task.wait() until game:IsLoaded()
 
+-- ⚙️ Servicios
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
+-- 👤 Jugador local
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then return end
 
+-- 📁 Carpetas (con detección dinámica)
 local Folders = {
-	Alices = Workspace:WaitForChild("Alices"),
-	Students = Workspace:WaitForChild("Students"),
-	Teachers = Workspace:WaitForChild("Teachers"),
+	Alices = Workspace:FindFirstChild("Alices"),
+	Students = Workspace:FindFirstChild("Students"),
+	Teachers = Workspace:FindFirstChild("Teachers"),
 }
 
+-- Espera si no existen todavía
+for name, folder in pairs(Folders) do
+	if not folder then
+		Workspace.ChildAdded:Wait()
+		Folders[name] = Workspace:FindFirstChild(name)
+	end
+end
+
+-- ⚙️ Configuración
 local MAX = { Teachers = 4, Alices = 2 }
 local MAX_RENDER_DISTANCE = 250
 local BILLBOARD_SIZE = UDim2.new(0, 45, 0, 45)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
 
--- Imagen base
+-- 🖼️ Imágenes
 local BASE_IDS = {
 	Bloomie = "129090409260807",
 	Circle = "72842137403522",
@@ -30,11 +42,12 @@ local BASE_IDS = {
 }
 local CIRCLE_ENRAGED_ID = "108867117884833"
 
+-- 📦 Estado
 local ActiveBillboards = {}
 local ActiveCounts = { Teachers = 0, Alices = 0 }
 
 ------------------------------------------------------
--- 🔹 Funciones auxiliares
+-- 🔧 Funciones auxiliares
 ------------------------------------------------------
 
 local function getImageIdForModel(model)
@@ -65,8 +78,15 @@ local function getRealHead(model)
 	return head
 end
 
+local function getDistanceFromLocal(head)
+	local char = LocalPlayer.Character
+	local myHead = char and getRealHead(char)
+	if not (myHead and head) then return math.huge end
+	return (myHead.Position - head.Position).Magnitude
+end
+
 ------------------------------------------------------
--- 🧩 Creación / destrucción de Billboard
+-- 🧩 Billboard Handling
 ------------------------------------------------------
 
 local function createBillboardFor(model, folderName)
@@ -85,6 +105,7 @@ local function createBillboardFor(model, folderName)
 	bb.Size = BILLBOARD_SIZE
 	bb.StudsOffset = STUDS_OFFSET
 	bb.AlwaysOnTop = true
+	bb.MaxDistance = MAX_RENDER_DISTANCE
 	bb.Enabled = true
 	bb.Parent = head
 
@@ -92,7 +113,6 @@ local function createBillboardFor(model, folderName)
 	img.Name = "RoleImage"
 	img.Size = UDim2.new(1, 0, 1, 0)
 	img.BackgroundTransparency = 1
-	img.BorderSizePixel = 0
 	img.Image = "rbxassetid://" .. tostring(imageId)
 	img.ScaleType = Enum.ScaleType.Fit
 	img.Parent = bb
@@ -121,12 +141,25 @@ local function destroyBillboard(model)
 end
 
 ------------------------------------------------------
--- 🧩 Lógica de visibilidad
+-- 🧩 Visibilidad
+------------------------------------------------------
+
+local function updateVisibility(model)
+	local data = ActiveBillboards[model]
+	if not data then return end
+	local head = getRealHead(model)
+	if not head then return destroyBillboard(model) end
+	local dist = getDistanceFromLocal(head)
+	data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
+end
+
+------------------------------------------------------
+-- 🧩 Lógica de acceso
 ------------------------------------------------------
 
 local function detectLocalFolder()
 	for name, folder in pairs(Folders) do
-		if folder:FindFirstChild(LocalPlayer.Name) then
+		if folder and folder:FindFirstChild(LocalPlayer.Name) then
 			return name
 		end
 	end
@@ -135,6 +168,7 @@ end
 local function shouldLocalSeeModel(localFolder, targetFolder, model)
 	if not localFolder or not targetFolder or not model then return false end
 	if model.Name == LocalPlayer.Name then return false end
+
 	if localFolder == "Students" then
 		return targetFolder == "Teachers" or targetFolder == "Alices"
 	elseif localFolder == "Teachers" then
@@ -145,21 +179,8 @@ local function shouldLocalSeeModel(localFolder, targetFolder, model)
 	return false
 end
 
-local function updateVisibility(model)
-	local localChar = LocalPlayer.Character
-	local myHead = localChar and getRealHead(localChar)
-	local data = ActiveBillboards[model]
-	if not (myHead and data and data.gui) then return end
-
-	local targetHead = getRealHead(model)
-	if not targetHead then return destroyBillboard(model) end
-
-	local dist = (targetHead.Position - myHead.Position).Magnitude
-	data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
-end
-
 ------------------------------------------------------
--- 🧩 Vinculación de señales
+-- 🧩 Señales por modelo
 ------------------------------------------------------
 
 local function hookModelSignals(model, folderName)
@@ -170,6 +191,7 @@ local function hookModelSignals(model, folderName)
 	marker.Name = "__BillboardHooked"
 	marker.Parent = model
 
+	-- 🔹 Cambios de atributos
 	model:GetAttributeChangedSignal("TeacherName"):Connect(function()
 		destroyBillboard(model)
 		createBillboardFor(model, folderName)
@@ -177,22 +199,25 @@ local function hookModelSignals(model, folderName)
 
 	model:GetAttributeChangedSignal("Enraged"):Connect(function()
 		local data = ActiveBillboards[model]
-		if not data then return end
-		local bb = data.gui
-		local img = bb and bb:FindFirstChild("RoleImage")
 		local newId = getImageIdForModel(model)
+		local bb = data and data.gui
+		local img = bb and bb:FindFirstChild("RoleImage")
 		if img and newId then
 			img.Image = "rbxassetid://" .. tostring(newId)
 		end
 	end)
 
+	-- 🔹 Movimiento
 	local head = getRealHead(model)
 	if head then
 		head:GetPropertyChangedSignal("Position"):Connect(function()
-			if ActiveBillboards[model] then updateVisibility(model) end
+			if ActiveBillboards[model] then
+				updateVisibility(model)
+			end
 		end)
 	end
 
+	-- 🔹 Eliminación
 	model.AncestryChanged:Connect(function(_, parent)
 		if not parent then destroyBillboard(model) end
 	end)
@@ -204,62 +229,64 @@ end
 
 local function scanAndApply(localFolder)
 	if not localFolder then return end
+
 	for _, folderName in ipairs({"Alices", "Teachers"}) do
 		local folder = Folders[folderName]
 		if not folder then continue end
+
 		for _, model in ipairs(folder:GetChildren()) do
 			if model:IsA("Model") and shouldLocalSeeModel(localFolder, folderName, model) then
-				if not ActiveBillboards[model] then
-					createBillboardFor(model, folderName)
-					hookModelSignals(model, folderName)
-				end
+				createBillboardFor(model, folderName)
+				hookModelSignals(model, folderName)
 				updateVisibility(model)
 			else
-				if ActiveBillboards[model] then destroyBillboard(model) end
+				destroyBillboard(model)
 			end
 		end
 	end
 end
 
 ------------------------------------------------------
--- 🧩 Conexiones principales (solo eventos)
+-- 🧩 Conexión de carpetas dinámicas
 ------------------------------------------------------
 
-for _, folder in pairs(Folders) do
+for _, folderName in ipairs({"Alices", "Teachers"}) do
+	local folder = Folders[folderName]
+	if not folder then continue end
+
 	folder.ChildAdded:Connect(function(child)
 		if not child:IsA("Model") then return end
 		local localFolder = detectLocalFolder()
-		if shouldLocalSeeModel(localFolder, folder.Name, child) then
-			createBillboardFor(child, folder.Name)
-			hookModelSignals(child, folder.Name)
+		if shouldLocalSeeModel(localFolder, folderName, child) then
+			createBillboardFor(child, folderName)
+			hookModelSignals(child, folderName)
 			updateVisibility(child)
 		end
 	end)
 
 	folder.ChildRemoved:Connect(function(child)
-		if ActiveBillboards[child] then destroyBillboard(child) end
+		destroyBillboard(child)
 	end)
 end
 
--- 🔹 Reescaneo tras reaparecer o cambiar carpeta
+------------------------------------------------------
+-- 🧩 Respawn y estado del jugador
+------------------------------------------------------
+
 LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(0.25)
+	task.wait(0.3)
 	local localFolder = detectLocalFolder()
 	if localFolder == "Students" then
-		scanAndApply(localFolder)
+		task.defer(function() scanAndApply(localFolder) end)
 	else
 		for m in pairs(ActiveBillboards) do destroyBillboard(m) end
 	end
-
-	-- 🔹 Reforzamos actualización tras reaparecer
-	task.defer(function()
-		if detectLocalFolder() == "Students" then
-			scanAndApply("Students")
-		end
-	end)
 end)
 
--- 🔹 Escaneo inicial
+------------------------------------------------------
+-- 🧩 Escaneo inicial
+------------------------------------------------------
+
 task.defer(function()
 	if detectLocalFolder() == "Students" then
 		scanAndApply("Students")
