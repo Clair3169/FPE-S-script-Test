@@ -1,5 +1,5 @@
--- 🧿 Books BillboardGui Optimizado Final (solo eventos, sin FPS drops)
--- LocalScript -> StarterPlayerScripts o StarterCharacterScripts
+-- 🧿 Books BillboardGui Optimizado FINAL y Confiable (solo eventos, sin FPS drops)
+-- LocalScript -> StarterPlayerScripts
 
 repeat task.wait() until game:IsLoaded()
 
@@ -21,13 +21,13 @@ local asleep = false
 local billboards = {}
 local booksFolder
 
--- 📁 Carpeta de caché global (para evitar recrear repetidamente)
+-- 📁 Carpeta de caché (reutilizable)
 local cacheFolder = Workspace:FindFirstChild("BillboardCache_Books") or Instance.new("Folder")
 cacheFolder.Name = "BillboardCache_Books"
 cacheFolder.Parent = Workspace
 
 ------------------------------------------------------
--- 🧩 Funciones auxiliares
+-- 🔧 Funciones auxiliares
 ------------------------------------------------------
 
 local function getCameraDistance(part)
@@ -36,21 +36,11 @@ local function getCameraDistance(part)
 	return (cam.CFrame.Position - part.Position).Magnitude
 end
 
-local function clearAll()
-	for meshPart, billboard in pairs(billboards) do
-		if billboard then
-			billboard.Enabled = false
-			billboard.Adornee = nil
-		end
-	end
-	billboards = {}
-end
-
 local function getOrCreateBillboard(meshPart)
 	if not meshPart or not meshPart:IsA("BasePart") then return end
 	if billboards[meshPart] then return billboards[meshPart] end
 
-	local cacheName = meshPart.Name .. "_BB_Book"
+	local cacheName = meshPart:GetDebugId() .. "_BB_Book"
 	local cached = cacheFolder:FindFirstChild(cacheName)
 
 	if cached and cached:IsA("BillboardGui") then
@@ -88,76 +78,91 @@ local function updateBillboardVisibility(meshPart)
 	billboard.Enabled = dist <= RENDER_DISTANCE
 end
 
+local function removeBillboard(meshPart)
+	local bb = billboards[meshPart]
+	if bb then
+		bb.Enabled = false
+		bb.Adornee = nil
+	end
+	billboards[meshPart] = nil
+end
+
 ------------------------------------------------------
--- 🧩 Activar y manejar libros
+-- 📘 Sistema de activación de libros
 ------------------------------------------------------
+
+local function connectBookSignals(book)
+	if not book:IsA("BasePart") then return end
+	if book:FindFirstChild("__HookedBook") then return end
+
+	local flag = Instance.new("BoolValue")
+	flag.Name = "__HookedBook"
+	flag.Parent = book
+
+	book:GetPropertyChangedSignal("Position"):Connect(function()
+		if asleep then return end
+		updateBillboardVisibility(book)
+	end)
+
+	book.AncestryChanged:Connect(function(_, parent)
+		if not parent or parent ~= booksFolder then
+			removeBillboard(book)
+		end
+	end)
+end
 
 local function activateBooks()
 	if asleep or not booksFolder then return end
 
 	for _, obj in ipairs(booksFolder:GetChildren()) do
-		if obj:IsA("MeshPart") and not billboards[obj] then
-			local bb = getOrCreateBillboard(obj)
+		if obj:IsA("BasePart") then
+			getOrCreateBillboard(obj)
 			updateBillboardVisibility(obj)
-
-			-- Solo conectar una vez
-			if not obj:FindFirstChild("__BookHooked") then
-				local marker = Instance.new("BoolValue")
-				marker.Name = "__BookHooked"
-				marker.Parent = obj
-
-				obj:GetPropertyChangedSignal("Position"):Connect(function()
-					if asleep then return end
-					updateBillboardVisibility(obj)
-				end)
-			end
+			connectBookSignals(obj)
 		end
 	end
 end
 
 ------------------------------------------------------
--- 🧩 Sistema de conexión
+-- 🪄 Eventos de carpeta "Books"
 ------------------------------------------------------
 
-local function connectBookEvents()
+local function setupBookFolder()
 	if not booksFolder then return end
+
+	-- Libros ya existentes (asegurado)
+	task.defer(activateBooks)
 
 	booksFolder.ChildAdded:Connect(function(child)
 		if asleep then return end
-		if child:IsA("MeshPart") then
+		if child:IsA("BasePart") then
 			getOrCreateBillboard(child)
 			updateBillboardVisibility(child)
+			connectBookSignals(child)
 		end
 	end)
 
 	booksFolder.ChildRemoved:Connect(function(child)
-		if billboards[child] then
-			local bb = billboards[child]
-			if bb then
-				bb.Enabled = false
-				bb.Adornee = nil
-			end
-			billboards[child] = nil
-		end
+		removeBillboard(child)
 	end)
-
-	activateBooks()
 end
 
 ------------------------------------------------------
--- 🧩 Estado del jugador (Alices / Teachers)
+-- 🧍‍♂️ Estado del jugador (Alices / Teachers)
 ------------------------------------------------------
 
 local function checkSleepState()
 	local char = player.Character
 	if not char or not char.Parent then return end
 
-	local inAllowedFolder = (char.Parent.Name == "Alices" or char.Parent.Name == "Teachers")
+	local newState = (char.Parent.Name == "Alices" or char.Parent.Name == "Teachers")
 
-	if inAllowedFolder ~= asleep then
-		asleep = inAllowedFolder
+	if newState ~= asleep then
+		asleep = newState
 		if asleep then
-			clearAll()
+			for meshPart in pairs(billboards) do
+				removeBillboard(meshPart)
+			end
 		else
 			task.defer(activateBooks)
 		end
@@ -165,37 +170,38 @@ local function checkSleepState()
 end
 
 ------------------------------------------------------
--- 🧩 Eventos globales
+-- 🌍 Inicialización global
 ------------------------------------------------------
 
--- Detectar Books folder
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Books" and child:IsA("Folder") then
 		booksFolder = child
-		connectBookEvents()
+		setupBookFolder()
 	end
 end)
 
 Workspace.ChildRemoved:Connect(function(child)
 	if child == booksFolder then
-		clearAll()
+		for meshPart in pairs(billboards) do
+			removeBillboard(meshPart)
+		end
 		booksFolder = nil
 	end
 end)
 
--- Inicializar si ya existe
+-- Si Books ya existe, conéctalo de inmediato
 if Workspace:FindFirstChild("Books") then
 	booksFolder = Workspace.Books
-	connectBookEvents()
+	setupBookFolder()
 end
 
--- Detectar cambios de estado del jugador
+-- Estado del jugador
 player.CharacterAdded:Connect(function(char)
 	char:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
-	checkSleepState()
+	task.defer(checkSleepState)
 end)
 
 if player.Character then
 	player.Character:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
-	checkSleepState()
+	task.defer(checkSleepState)
 end
