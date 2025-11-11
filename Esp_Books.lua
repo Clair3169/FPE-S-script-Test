@@ -1,5 +1,5 @@
--- 🧿 Books BillboardGui Optimizado (solo eventos, sin FPS drops)
--- LocalScript en StarterPlayerScripts o StarterCharacterScripts
+-- 🧿 Books BillboardGui Optimizado Final (solo eventos, sin FPS drops)
+-- LocalScript -> StarterPlayerScripts o StarterCharacterScripts
 
 repeat task.wait() until game:IsLoaded()
 
@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 -- 👤 Jugador local
 local player = Players.LocalPlayer
+if not player then return end
 
 -- ⚙️ Configuración
 local IMAGE_ID = "rbxassetid://17537434140"
@@ -20,29 +21,55 @@ local asleep = false
 local billboards = {}
 local booksFolder
 
+-- 📁 Carpeta de caché global (para evitar recrear repetidamente)
+local cacheFolder = Workspace:FindFirstChild("BillboardCache_Books") or Instance.new("Folder")
+cacheFolder.Name = "BillboardCache_Books"
+cacheFolder.Parent = Workspace
+
 ------------------------------------------------------
 -- 🧩 Funciones auxiliares
 ------------------------------------------------------
 
+local function getCameraDistance(part)
+	local cam = Workspace.CurrentCamera
+	if not cam or not part then return math.huge end
+	return (cam.CFrame.Position - part.Position).Magnitude
+end
+
 local function clearAll()
 	for meshPart, billboard in pairs(billboards) do
-		if billboard and billboard.Parent then
-			billboard:Destroy()
+		if billboard then
+			billboard.Enabled = false
+			billboard.Adornee = nil
 		end
 	end
 	billboards = {}
 end
 
-local function createBillboard(meshPart)
-	if asleep or not meshPart:IsA("BasePart") or billboards[meshPart] then return end
+local function getOrCreateBillboard(meshPart)
+	if not meshPart or not meshPart:IsA("BasePart") then return end
+	if billboards[meshPart] then return billboards[meshPart] end
+
+	local cacheName = meshPart.Name .. "_BB_Book"
+	local cached = cacheFolder:FindFirstChild(cacheName)
+
+	if cached and cached:IsA("BillboardGui") then
+		cached.Adornee = meshPart
+		cached.Enabled = true
+		billboards[meshPart] = cached
+		return cached
+	end
 
 	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "BookBillboard"
+	billboard.Name = cacheName
 	billboard.AlwaysOnTop = true
 	billboard.Size = BILLBOARD_SIZE
 	billboard.MaxDistance = RENDER_DISTANCE
 	billboard.StudsOffset = Vector3.new(0, meshPart.Size.Y + 1, 0)
 	billboard.Adornee = meshPart
+	billboard.LightInfluence = 0
+	billboard.Enabled = true
+	billboard.Parent = cacheFolder
 
 	local image = Instance.new("ImageLabel")
 	image.BackgroundTransparency = 1
@@ -50,80 +77,89 @@ local function createBillboard(meshPart)
 	image.Size = UDim2.new(1, 0, 1, 0)
 	image.Parent = billboard
 
-	billboard.Parent = meshPart
 	billboards[meshPart] = billboard
+	return billboard
 end
 
-local function removeBillboard(meshPart)
-	if billboards[meshPart] then
-		billboards[meshPart]:Destroy()
-		billboards[meshPart] = nil
-	end
+local function updateBillboardVisibility(meshPart)
+	local billboard = billboards[meshPart]
+	if not billboard then return end
+	local dist = getCameraDistance(meshPart)
+	billboard.Enabled = dist <= RENDER_DISTANCE
 end
+
+------------------------------------------------------
+-- 🧩 Activar y manejar libros
+------------------------------------------------------
 
 local function activateBooks()
 	if asleep or not booksFolder then return end
+
 	for _, obj in ipairs(booksFolder:GetChildren()) do
-		if obj:IsA("MeshPart") then
-			createBillboard(obj)
+		if obj:IsA("MeshPart") and not billboards[obj] then
+			local bb = getOrCreateBillboard(obj)
+			updateBillboardVisibility(obj)
+
+			-- Solo conectar una vez
+			if not obj:FindFirstChild("__BookHooked") then
+				local marker = Instance.new("BoolValue")
+				marker.Name = "__BookHooked"
+				marker.Parent = obj
+
+				obj:GetPropertyChangedSignal("Position"):Connect(function()
+					if asleep then return end
+					updateBillboardVisibility(obj)
+				end)
+			end
 		end
 	end
 end
 
 ------------------------------------------------------
--- 🧩 Sistema de conexión de libros
+-- 🧩 Sistema de conexión
 ------------------------------------------------------
 
 local function connectBookEvents()
 	if not booksFolder then return end
 
-	-- Cuando aparece un libro
 	booksFolder.ChildAdded:Connect(function(child)
-		if not asleep and child:IsA("MeshPart") then
-			createBillboard(child)
+		if asleep then return end
+		if child:IsA("MeshPart") then
+			getOrCreateBillboard(child)
+			updateBillboardVisibility(child)
 		end
 	end)
 
-	-- Cuando desaparece un libro
 	booksFolder.ChildRemoved:Connect(function(child)
-		removeBillboard(child)
-	end)
-
-	-- Cuando el libro cambia de posición, solo actualiza visibilidad si es necesario
-	for _, obj in ipairs(booksFolder:GetChildren()) do
-		if obj:IsA("BasePart") then
-			obj:GetPropertyChangedSignal("Position"):Connect(function()
-				if billboards[obj] then
-					local cam = Workspace.CurrentCamera
-					local dist = (cam.CFrame.Position - obj.Position).Magnitude
-					billboards[obj].Enabled = (dist <= RENDER_DISTANCE)
-				end
-			end)
+		if billboards[child] then
+			local bb = billboards[child]
+			if bb then
+				bb.Enabled = false
+				bb.Adornee = nil
+			end
+			billboards[child] = nil
 		end
-	end
+	end)
 
 	activateBooks()
 end
 
 ------------------------------------------------------
--- 🧩 Detectar si el jugador entra en Alices / Teachers
+-- 🧩 Estado del jugador (Alices / Teachers)
 ------------------------------------------------------
 
 local function checkSleepState()
 	local char = player.Character
 	if not char or not char.Parent then return end
 
-	local inAsleepFolder = (char.Parent.Name == "Alices" or char.Parent.Name == "Teachers")
+	local inAllowedFolder = (char.Parent.Name == "Alices" or char.Parent.Name == "Teachers")
 
-	if inAsleepFolder ~= asleep then
-		asleep = inAsleepFolder
-
+	if inAllowedFolder ~= asleep then
+		asleep = inAllowedFolder
 		if asleep then
 			clearAll()
 		else
-			if booksFolder and #booksFolder:GetChildren() > 0 then
-				activateBooks()
-			end
+			task.defer(activateBooks)
 		end
 	end
 end
@@ -132,7 +168,7 @@ end
 -- 🧩 Eventos globales
 ------------------------------------------------------
 
--- Carpeta Books
+-- Detectar Books folder
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Books" and child:IsA("Folder") then
 		booksFolder = child
@@ -147,7 +183,7 @@ Workspace.ChildRemoved:Connect(function(child)
 	end
 end)
 
--- Inicialización si ya existe Books
+-- Inicializar si ya existe
 if Workspace:FindFirstChild("Books") then
 	booksFolder = Workspace.Books
 	connectBookEvents()
