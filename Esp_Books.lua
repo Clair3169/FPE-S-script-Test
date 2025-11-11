@@ -1,27 +1,33 @@
--- LocalScript
--- Colócalo en StarterPlayerScripts o StarterCharacterScripts
+-- 🧿 Books BillboardGui Optimizado (solo eventos, sin FPS drops)
+-- LocalScript en StarterPlayerScripts o StarterCharacterScripts
 
+repeat task.wait() until game:IsLoaded()
+
+-- ⚙️ Servicios
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
+-- 👤 Jugador local
 local player = Players.LocalPlayer
 
+-- ⚙️ Configuración
 local IMAGE_ID = "rbxassetid://17537434140"
 local RENDER_DISTANCE = 180
-local BILLBOARD_SIZE = UDim2.new(2.5, 0, 2.5, 0) -- tamaño mediano
+local BILLBOARD_SIZE = UDim2.new(2.5, 0, 2.5, 0)
+local asleep = false
 
+-- 📦 Estado
 local billboards = {}
 local booksFolder
-local asleep = false -- estado dormido si estamos en Alices o Teachers
 
 ------------------------------------------------------
--- Funciones auxiliares
+-- 🧩 Funciones auxiliares
 ------------------------------------------------------
 
 local function clearAll()
-	for meshPart, _ in pairs(billboards) do
-		if billboards[meshPart] then
-			billboards[meshPart]:Destroy()
+	for meshPart, billboard in pairs(billboards) do
+		if billboard and billboard.Parent then
+			billboard:Destroy()
 		end
 	end
 	billboards = {}
@@ -65,34 +71,68 @@ local function activateBooks()
 end
 
 ------------------------------------------------------
--- Control de carpeta Books (creación / eliminación)
+-- 🧩 Sistema de conexión de libros
 ------------------------------------------------------
 
 local function connectBookEvents()
 	if not booksFolder then return end
 
+	-- Cuando aparece un libro
 	booksFolder.ChildAdded:Connect(function(child)
 		if not asleep and child:IsA("MeshPart") then
 			createBillboard(child)
 		end
 	end)
 
+	-- Cuando desaparece un libro
 	booksFolder.ChildRemoved:Connect(function(child)
 		removeBillboard(child)
-		-- [[ CAMBIO REALIZADO ]]
-		-- La siguiente comprobación es redundante.
-		-- Si se elimina el último libro, removeBillboard(child) lo limpiará.
-		-- Si se elimina la carpeta "Books" entera, el evento de Workspace.ChildRemoved
-		-- llamará a clearAll() de todos modos.
-		-- 
-		-- if #booksFolder:GetChildren() == 0 then
-		-- 	clearAll()
-		-- end
 	end)
+
+	-- Cuando el libro cambia de posición, solo actualiza visibilidad si es necesario
+	for _, obj in ipairs(booksFolder:GetChildren()) do
+		if obj:IsA("BasePart") then
+			obj:GetPropertyChangedSignal("Position"):Connect(function()
+				if billboards[obj] then
+					local cam = Workspace.CurrentCamera
+					local dist = (cam.CFrame.Position - obj.Position).Magnitude
+					billboards[obj].Enabled = (dist <= RENDER_DISTANCE)
+				end
+			end)
+		end
+	end
 
 	activateBooks()
 end
 
+------------------------------------------------------
+-- 🧩 Detectar si el jugador entra en Alices / Teachers
+------------------------------------------------------
+
+local function checkSleepState()
+	local char = player.Character
+	if not char or not char.Parent then return end
+
+	local inAsleepFolder = (char.Parent.Name == "Alices" or char.Parent.Name == "Teachers")
+
+	if inAsleepFolder ~= asleep then
+		asleep = inAsleepFolder
+
+		if asleep then
+			clearAll()
+		else
+			if booksFolder and #booksFolder:GetChildren() > 0 then
+				activateBooks()
+			end
+		end
+	end
+end
+
+------------------------------------------------------
+-- 🧩 Eventos globales
+------------------------------------------------------
+
+-- Carpeta Books
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Books" and child:IsA("Folder") then
 		booksFolder = child
@@ -107,45 +147,18 @@ Workspace.ChildRemoved:Connect(function(child)
 	end
 end)
 
+-- Inicialización si ya existe Books
 if Workspace:FindFirstChild("Books") then
 	booksFolder = Workspace.Books
 	connectBookEvents()
 end
 
-------------------------------------------------------
--- Detección de si el jugador está en Alices o Teachers
-------------------------------------------------------
-
-local function checkSleepState()
-	local char = player.Character or player.CharacterAdded:Wait()
-	local parent = char.Parent
-	local newAsleep = false
-
-	if parent and (parent.Name == "Alices" or parent.Name == "Teachers") then
-		newAsleep = true
-	end
-
-	if newAsleep ~= asleep then
-		asleep = newAsleep
-		if asleep then
-			-- Dormir → eliminar todos los BillboardGui
-			clearAll()
-		else
-			-- Despertar → volver a activar si hay libros
-			if booksFolder and #booksFolder:GetChildren() > 0 then
-				activateBooks()
-			end
-		end
-	end
-end
-
--- Escucha cuando cambie el parent del Character (entra o sale de carpetas)
+-- Detectar cambios de estado del jugador
 player.CharacterAdded:Connect(function(char)
 	char:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	checkSleepState()
 end)
 
--- Si ya hay personaje cargado al inicio
 if player.Character then
 	player.Character:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	checkSleepState()
