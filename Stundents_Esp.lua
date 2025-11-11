@@ -1,4 +1,4 @@
--- 🧿 Student Image Highlighter (versión BillboardGui optimizada)
+-- 🧿 Student Image Highlighter (BillboardGui optimizado final)
 repeat task.wait() until game:IsLoaded()
 
 -- ⚙️ Servicios
@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 
 -- 👤 Jugador local
 local localPlayer = Players.LocalPlayer
+if not localPlayer then return end
 
 -- 📂 Carpetas
 local studentsFolder = Workspace:WaitForChild("Students")
@@ -15,7 +16,7 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 -- ⚙️ Configuración
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 5
+local UPDATE_THRESHOLD = 5 -- distancia mínima para volver a recalcular
 local systemActive = false
 
 -- 🧠 Estado
@@ -26,7 +27,7 @@ billboardCache.Name = "BillboardCache_Students"
 billboardCache.Parent = Workspace
 
 ------------------------------------------------------
--- Funciones auxiliares
+-- 🧩 Utilidades
 ------------------------------------------------------
 
 local function getModelPosition(model)
@@ -91,7 +92,7 @@ local function isInValidFolder()
 end
 
 ------------------------------------------------------
--- Visibilidad dinámica (solo con eventos)
+-- 🧩 Actualización de visibilidad
 ------------------------------------------------------
 
 local function updateVisibleStudents()
@@ -122,14 +123,12 @@ local function updateVisibleStudents()
 		newVisible[distances[i][1]] = true
 	end
 
-	-- Ocultar los que ya no están cerca
 	for student in pairs(visibleStudents) do
 		if not newVisible[student] then
 			updateBillboardState(student, false)
 		end
 	end
 
-	-- Mostrar los nuevos visibles
 	for student in pairs(newVisible) do
 		if not visibleStudents[student] then
 			updateBillboardState(student, true)
@@ -155,26 +154,28 @@ local function updateSystemStatus(force)
 end
 
 ------------------------------------------------------
--- Eventos optimizados
+-- 🧩 Conexión de eventos dinámicos
 ------------------------------------------------------
 
--- Al entrar o salir un Student
 studentsFolder.ChildAdded:Connect(function(child)
-	if child:IsA("Model") and child ~= localPlayer.Character then
-		getOrCreateBillboard(child)
-		if systemActive then
-			updateVisibleStudents()
-		end
+	if not child:IsA("Model") or child == localPlayer.Character then return end
+	getOrCreateBillboard(child)
 
-		-- Escucha cambios de posición del jugador remoto
-		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
-		if head then
-			head:GetPropertyChangedSignal("Position"):Connect(function()
-				if systemActive then
-					updateVisibleStudents()
-				end
-			end)
-		end
+	if systemActive then
+		updateVisibleStudents()
+	end
+
+	local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
+	if head and not head:FindFirstChild("__StudentHooked") then
+		local marker = Instance.new("BoolValue")
+		marker.Name = "__StudentHooked"
+		marker.Parent = head
+
+		head:GetPropertyChangedSignal("Position"):Connect(function()
+			if systemActive then
+				updateVisibleStudents()
+			end
+		end)
 	end
 end)
 
@@ -190,19 +191,24 @@ studentsFolder.ChildRemoved:Connect(function(child)
 	visibleStudents[child] = nil
 end)
 
--- Control del personaje local
+------------------------------------------------------
+-- 🧩 Control del personaje local
+------------------------------------------------------
+
 local function onCharacterAdded(character)
 	updateSystemStatus(true)
 
-	-- Monitorear movimiento del jugador local
-	for _, part in ipairs(character:GetChildren()) do
-		if part:IsA("BasePart") then
-			part:GetPropertyChangedSignal("Position"):Connect(function()
-				if systemActive then
-					updateVisibleStudents()
-				end
-			end)
-		end
+	local root = character:WaitForChild("HumanoidRootPart", 3)
+	if root then
+		local lastPos = root.Position
+		root:GetPropertyChangedSignal("Position"):Connect(function()
+			if not systemActive then return end
+			local newPos = root.Position
+			if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
+				lastPos = newPos
+				updateVisibleStudents()
+			end
+		end)
 	end
 
 	character:GetPropertyChangedSignal("Parent"):Connect(updateSystemStatus)
@@ -214,7 +220,7 @@ end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
 
 ------------------------------------------------------
--- Inicialización de caché
+-- 🧩 Inicialización de caché segura
 ------------------------------------------------------
 
 for _, student in ipairs(studentsFolder:GetChildren()) do
@@ -223,6 +229,6 @@ for _, student in ipairs(studentsFolder:GetChildren()) do
 	end
 end
 
-task.delay(0.5, function()
+task.defer(function()
 	updateSystemStatus(true)
 end)
