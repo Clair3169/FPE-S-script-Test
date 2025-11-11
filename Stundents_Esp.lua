@@ -1,10 +1,9 @@
--- 🧿 Student Image Highlighter (BillboardGui Optimizado Final y Estable)
+-- 🧿 Student Image Highlighter (Optimizado Final sin bucles)
 repeat task.wait() until game:IsLoaded()
 
 -- ⚙️ Servicios
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
 -- 👤 Jugador local
 local localPlayer = Players.LocalPlayer
@@ -17,11 +16,10 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 -- ⚙️ Configuración
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 5 -- distancia mínima para actualizar
-local UPDATE_INTERVAL = 0.25 -- segundos entre chequeos
-local systemActive = false
+local UPDATE_THRESHOLD = 6
 
 -- 🧠 Estado interno
+local systemActive = false
 local activeBillboards = {}
 local visibleStudents = {}
 local billboardCache = Workspace:FindFirstChild("BillboardCache_Students") or Instance.new("Folder")
@@ -53,7 +51,6 @@ local function getOrCreateBillboard(character)
 
 	local cacheName = character.Name .. "_BB_Student"
 	local cached = billboardCache:FindFirstChild(cacheName)
-
 	if cached and cached:IsA("BillboardGui") then
 		ensureAdornee(character, cached)
 		cached.Enabled = false
@@ -102,21 +99,20 @@ local function isInValidFolder()
 end
 
 ------------------------------------------------------
--- 📡 Visibilidad de los Students
+-- 📡 Sistema principal (solo por eventos)
 ------------------------------------------------------
 
 local function updateVisibleStudents()
 	if not systemActive or not localPlayer.Character then return end
-
 	local localPos = getModelPosition(localPlayer.Character)
 	if not localPos then return end
 
 	local distances = {}
 	for _, student in ipairs(studentsFolder:GetChildren()) do
-		if student ~= localPlayer.Character and student:IsA("Model") then
-			local targetPos = getModelPosition(student)
-			if targetPos then
-				local dist = (localPos - targetPos).Magnitude
+		if student:IsA("Model") and student ~= localPlayer.Character then
+			local pos = getModelPosition(student)
+			if pos then
+				local dist = (localPos - pos).Magnitude
 				if dist <= MAX_DISTANCE then
 					table.insert(distances, {student, dist})
 				end
@@ -184,13 +180,12 @@ studentsFolder.ChildAdded:Connect(function(child)
 			marker.Parent = head
 
 			head:GetPropertyChangedSignal("Position"):Connect(function()
-				if systemActive then
-					updateVisibleStudents()
-				end
+				if not systemActive then return end
+				updateVisibleStudents()
 			end)
 
 			child.ChildAdded:Connect(function(obj)
-				if obj.Name == "Head" or obj:IsA("BasePart") then
+				if obj:IsA("BasePart") then
 					local bb = activeBillboards[child]
 					if bb then ensureAdornee(child, bb) end
 				end
@@ -224,7 +219,7 @@ local function onCharacterAdded(character)
 		root:GetPropertyChangedSignal("Position"):Connect(function()
 			if not systemActive then return end
 			local newPos = root.Position
-			if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
+			if (newPos - lastPos).Magnitude >= UPDATE_THRESHOLD then
 				lastPos = newPos
 				updateVisibleStudents()
 			end
@@ -240,16 +235,7 @@ end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
 
 ------------------------------------------------------
--- 🧩 Actualización periódica liviana
-------------------------------------------------------
-RunService.Stepped:Connect(function(_, dt)
-	if not systemActive then return end
-	updateVisibleStudents()
-	task.wait(UPDATE_INTERVAL)
-end)
-
-------------------------------------------------------
--- 🧩 Inicialización segura
+-- 🧩 Inicialización
 ------------------------------------------------------
 
 for _, student in ipairs(studentsFolder:GetChildren()) do
