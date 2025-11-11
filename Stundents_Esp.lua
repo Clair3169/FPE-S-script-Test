@@ -1,10 +1,9 @@
--- 🧿 Student Image Highlighter (versión BillboardGui)
+-- 🧿 Student Image Highlighter (versión BillboardGui optimizada)
 repeat task.wait() until game:IsLoaded()
 
 -- ⚙️ Servicios
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
 -- 👤 Jugador local
 local localPlayer = Players.LocalPlayer
@@ -19,37 +18,30 @@ local MAX_DISTANCE = 200
 local UPDATE_THRESHOLD = 5
 local systemActive = false
 
--- 🧠 Estado de caché
+-- 🧠 Estado
 local activeBillboards = {}
 local visibleStudents = {}
-local currentCamera = Workspace.CurrentCamera
-
--- 🔧 Carpeta cache persistente
 local billboardCache = Workspace:FindFirstChild("BillboardCache_Students") or Instance.new("Folder")
 billboardCache.Name = "BillboardCache_Students"
 billboardCache.Parent = Workspace
 
--- 🧩 Obtener posición segura del modelo
+------------------------------------------------------
+-- Funciones auxiliares
+------------------------------------------------------
+
 local function getModelPosition(model)
 	if not model or not model:IsA("Model") then return nil end
-	if model.PrimaryPart then
-		return model.PrimaryPart.Position
-	end
+	if model.PrimaryPart then return model.PrimaryPart.Position end
 	for _, part in ipairs(model:GetChildren()) do
 		if part:IsA("BasePart") then
 			return part.Position
 		end
 	end
-	return nil
 end
 
--- 🧩 Crear o recuperar BillboardGui del cache
 local function getOrCreateBillboard(character)
 	if not character or not character:IsA("Model") then return end
-
-	if activeBillboards[character] then
-		return activeBillboards[character]
-	end
+	if activeBillboards[character] then return activeBillboards[character] end
 
 	local cacheName = character.Name .. "_BB_Student"
 	local cached = billboardCache:FindFirstChild(cacheName)
@@ -61,7 +53,6 @@ local function getOrCreateBillboard(character)
 		return cached
 	end
 
-	-- Crear nuevo BillboardGui
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = cacheName
 	billboard.Size = UDim2.new(0, 45, 0, 45)
@@ -82,23 +73,27 @@ local function getOrCreateBillboard(character)
 	return billboard
 end
 
--- 🧩 Pre-generar cache de todos los Students
-task.defer(function()
-	for _, student in ipairs(studentsFolder:GetChildren()) do
-		if student:IsA("Model") and student ~= localPlayer.Character then
-			getOrCreateBillboard(student)
-		end
-	end
-end)
-
--- 🧩 Activar o desactivar BillboardGui
 local function updateBillboardState(character, state)
 	local bb = getOrCreateBillboard(character)
 	if not bb then return end
 	bb.Enabled = state
 end
 
--- 🧩 Actualizar lista de visibles
+local function isInValidFolder()
+	local char = localPlayer.Character
+	if not char or not char.Parent then return false end
+	for _, folderName in ipairs(VALID_FOLDERS) do
+		if char.Parent.Name == folderName then
+			return true
+		end
+	end
+	return false
+end
+
+------------------------------------------------------
+-- Visibilidad dinámica (solo con eventos)
+------------------------------------------------------
+
 local function updateVisibleStudents()
 	if not systemActive or not localPlayer.Character then return end
 
@@ -127,12 +122,14 @@ local function updateVisibleStudents()
 		newVisible[distances[i][1]] = true
 	end
 
+	-- Ocultar los que ya no están cerca
 	for student in pairs(visibleStudents) do
 		if not newVisible[student] then
 			updateBillboardState(student, false)
 		end
 	end
 
+	-- Mostrar los nuevos visibles
 	for student in pairs(newVisible) do
 		if not visibleStudents[student] then
 			updateBillboardState(student, true)
@@ -140,18 +137,6 @@ local function updateVisibleStudents()
 	end
 
 	visibleStudents = newVisible
-end
-
--- 🧩 Verificar si el jugador local está en una carpeta válida
-local function isInValidFolder()
-	local char = localPlayer.Character
-	if not char or not char.Parent then return false end
-	for _, folderName in ipairs(VALID_FOLDERS) do
-		if char.Parent.Name == folderName then
-			return true
-		end
-	end
-	return false
 end
 
 local function updateSystemStatus(force)
@@ -169,12 +154,26 @@ local function updateSystemStatus(force)
 	end
 end
 
--- 🧩 Monitorear cambios en Students
+------------------------------------------------------
+-- Eventos optimizados
+------------------------------------------------------
+
+-- Al entrar o salir un Student
 studentsFolder.ChildAdded:Connect(function(child)
 	if child:IsA("Model") and child ~= localPlayer.Character then
 		getOrCreateBillboard(child)
 		if systemActive then
-			task.defer(updateVisibleStudents)
+			updateVisibleStudents()
+		end
+
+		-- Escucha cambios de posición del jugador remoto
+		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
+		if head then
+			head:GetPropertyChangedSignal("Position"):Connect(function()
+				if systemActive then
+					updateVisibleStudents()
+				end
+			end)
 		end
 	end
 end)
@@ -191,9 +190,21 @@ studentsFolder.ChildRemoved:Connect(function(child)
 	visibleStudents[child] = nil
 end)
 
--- 🧩 Control del personaje local
+-- Control del personaje local
 local function onCharacterAdded(character)
 	updateSystemStatus(true)
+
+	-- Monitorear movimiento del jugador local
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			part:GetPropertyChangedSignal("Position"):Connect(function()
+				if systemActive then
+					updateVisibleStudents()
+				end
+			end)
+		end
+	end
+
 	character:GetPropertyChangedSignal("Parent"):Connect(updateSystemStatus)
 end
 
@@ -202,29 +213,16 @@ if localPlayer.Character then
 end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
 
--- ♻️ Actualización por movimiento
-task.spawn(function()
-	local lastPos = Vector3.zero
-	while RunService.Heartbeat:Wait() do
-		if not systemActive or not localPlayer.Character then continue end
-		local pos = getModelPosition(localPlayer.Character)
-		if not pos then continue end
-		if (pos - lastPos).Magnitude > UPDATE_THRESHOLD then
-			lastPos = pos
-			updateVisibleStudents()
-		end
-	end
-end)
+------------------------------------------------------
+-- Inicialización de caché
+------------------------------------------------------
 
--- ♻️ Limpieza
-RunService.Stepped:Connect(function()
-	for char, billboard in pairs(activeBillboards) do
-		if not char or not char.Parent then
-			if billboard then
-				billboard.Enabled = false
-				billboard.Adornee = nil
-			end
-			activeBillboards[char] = nil
-		end
+for _, student in ipairs(studentsFolder:GetChildren()) do
+	if student:IsA("Model") and student ~= localPlayer.Character then
+		getOrCreateBillboard(student)
 	end
+end
+
+task.delay(0.5, function()
+	updateSystemStatus(true)
 end)
