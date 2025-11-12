@@ -16,6 +16,7 @@ local IMAGE_ID = "rbxassetid://17537434140"
 local RENDER_DISTANCE = 180
 local BILLBOARD_SIZE = UDim2.new(2.5, 0, 2.5, 0)
 local asleep = false
+local UPDATE_THRESHOLD = 5 -- Distancia en studs para actualizar los libros
 
 -- 📦 Estado
 local billboards = {}
@@ -90,6 +91,14 @@ end
 ------------------------------------------------------
 -- 📘 Sistema de activación de libros
 ------------------------------------------------------
+local function updateAllBooksVisibility()
+	if asleep then return end
+
+	-- Recorre todos los Billboards activos en la tabla 'billboards'
+	for meshPart in pairs(billboards) do
+		updateBillboardVisibility(meshPart)
+	end
+end
 
 local function connectBookSignals(book)
 	if not book:IsA("BasePart") then return end
@@ -98,11 +107,6 @@ local function connectBookSignals(book)
 	local flag = Instance.new("BoolValue")
 	flag.Name = "__HookedBook"
 	flag.Parent = book
-
-	book:GetPropertyChangedSignal("Position"):Connect(function()
-		if asleep then return end
-		updateBillboardVisibility(book)
-	end)
 
 	book.AncestryChanged:Connect(function(_, parent)
 		if not parent or parent ~= booksFolder then
@@ -195,13 +199,35 @@ if Workspace:FindFirstChild("Books") then
 	setupBookFolder()
 end
 
--- Estado del jugador
+local function hookPlayerMovement(character)
+	local root = character:WaitForChild("HumanoidRootPart", 3)
+	if not root then return end
+
+	local lastPos = root.Position
+	root:GetPropertyChangedSignal("Position"):Connect(function()
+		if asleep then return end -- No actualizamos si estamos "dormidos"
+
+		local newPos = root.Position
+		-- Solo actualizamos si nos hemos movido más que el umbral
+		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
+			lastPos = newPos
+			updateAllBooksVisibility()
+		end
+	end)
+end
+
+
 player.CharacterAdded:Connect(function(char)
+	-- Conecta el control de "dormir" al cambio de carpeta (equipo)
 	char:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	task.defer(checkSleepState)
+	
+	-- Conecta el control de movimiento
+	hookPlayerMovement(char)
 end)
 
 if player.Character then
 	player.Character:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	task.defer(checkSleepState)
+	hookPlayerMovement(player.Character)
 end
