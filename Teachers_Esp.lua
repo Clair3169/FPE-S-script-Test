@@ -175,6 +175,18 @@ local function updateAllBillboardsVisibility()
 		end
 	end
 end
+
+local function updateVisibility(model)
+	local data = ActiveBillboards[model]
+	if not data then return end
+	local head = getRealHead(model)
+	if not head then 
+		-- Si la cabeza desaparece, destruimos el billboard para limpiar.
+		return destroyBillboard(model) 
+	end 
+	local dist = getDistanceFromLocal(head)
+	data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
+end
 ------------------------------------------------------
 -- 🧩 Eventos por modelo
 ------------------------------------------------------
