@@ -21,6 +21,7 @@ local MAX = { Teachers = 4, Alices = 2 }
 local MAX_RENDER_DISTANCE = 250
 local BILLBOARD_SIZE = UDim2.new(0, 45, 0, 45)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
+local UPDATE_THRESHOLD = 5 -- Distancia en studs que el jugador debe moverse para actualizar
 
 -- 🖼️ Imágenes
 local BASE_IDS = {
@@ -163,15 +164,17 @@ end
 ------------------------------------------------------
 -- 🧩 Visibilidad
 ------------------------------------------------------
-local function updateVisibility(model)
-	local data = ActiveBillboards[model]
-	if not data then return end
-	local head = getRealHead(model)
-	if not head then return destroyBillboard(model) end
-	local dist = getDistanceFromLocal(head)
-	data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
-end
+local function updateAllBillboardsVisibility()
+	if not LocalPlayer.Character then return end
 
+	-- Recorre todos los billboards que hemos creado
+	for model, data in pairs(ActiveBillboards) do
+		-- Reutiliza tu función original para actualizar cada uno
+		if data and data.gui then
+			updateVisibility(model)
+		end
+	end
+end
 ------------------------------------------------------
 -- 🧩 Eventos por modelo
 ------------------------------------------------------
@@ -207,13 +210,7 @@ local function hookModelSignals(model, folderName)
 			end)
 		end
 	end)
-
-	local head = getRealHead(model)
-	if head then
-		head:GetPropertyChangedSignal("Position"):Connect(function()
-			updateVisibility(model)
-		end)
-	end
+	
 end
 
 ------------------------------------------------------
@@ -274,13 +271,34 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 	end)
 end
 
-LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(0.5)
-	scanAndApply(detectLocalFolder())
-end)
+local function onCharacterAdded(character)
+	task.wait(0.5) -- Espera a que el personaje esté listo
+	scanAndApply(detectLocalFolder()) -- Escanea al aparecer
+	updateAllBillboardsVisibility() -- Actualiza la visibilidad inicial
 
--- 🔹 Escaneo inicial al cargar
-task.defer(function()
-	task.wait(0.3)
-	scanAndApply(detectLocalFolder())
-end)
+	local root = character:WaitForChild("HumanoidRootPart", 3)
+	if not root then return end
+
+	local lastPos = root.Position
+	root:GetPropertyChangedSignal("Position"):Connect(function()
+		local newPos = root.Position
+		-- Si el jugador se mueve lo suficiente...
+		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
+			lastPos = newPos
+			-- ...actualiza la visibilidad de TODOS los billboards
+			updateAllBillboardsVisibility()
+		end
+	end)
+
+	-- Esto es importante: si cambias de equipo (de carpeta)
+	character:GetPropertyChangedSignal("Parent"):Connect(function()
+		task.defer(scanAndApply, detectLocalFolder())
+		task.defer(updateAllBillboardsVisibility)
+	end)
+end
+
+-- Conecta la función
+if LocalPlayer.Character then
+	onCharacterAdded(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
