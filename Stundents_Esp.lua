@@ -1,4 +1,4 @@
--- 🧿 Student Image Highlighter (Optimizado Final sin bucles)
+-- 🧿 Student Image Highlighter (Optimizado Híbrido)
 repeat task.wait() until game:IsLoaded()
 
 -- ⚙️ Servicios
@@ -16,7 +16,7 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 -- ⚙️ Configuración
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 6
+local UPDATE_THRESHOLD = 6 -- Puedes ajustarlo a 5 si lo prefieres
 
 -- 🧠 Estado interno
 local systemActive = false
@@ -72,7 +72,7 @@ local function getOrCreateBillboard(character)
 	local image = Instance.new("ImageLabel")
 	image.BackgroundTransparency = 1
 	image.Size = UDim2.new(1, 0, 1, 0)
-	image.Image = "rbxassetid://126500139798475"
+	image.Image = "rbxassetid://126500139798475" -- ID de la imagen
 	image.ScaleType = Enum.ScaleType.Fit
 	image.Parent = billboard
 
@@ -167,31 +167,20 @@ end
 
 studentsFolder.ChildAdded:Connect(function(child)
 	if not child:IsA("Model") or child == localPlayer.Character then return end
-	task.defer(function()
-		getOrCreateBillboard(child)
-		if systemActive then
-			updateVisibleStudents()
-		end
-
-		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
-		if head and not head:FindFirstChild("__StudentHooked") then
-			local marker = Instance.new("BoolValue")
-			marker.Name = "__StudentHooked"
-			marker.Parent = head
-
-			head:GetPropertyChangedSignal("Position"):Connect(function()
-				if not systemActive then return end
-				updateVisibleStudents()
-			end)
-
-			child.ChildAdded:Connect(function(obj)
-				if obj:IsA("BasePart") then
-					local bb = activeBillboards[child]
-					if bb then ensureAdornee(child, bb) end
-				end
-			end)
-		end
-	end)
+	
+	-- Preparamos el Billboard en cache
+	getOrCreateBillboard(child)
+	
+	if systemActive then
+		-- Forzamos una actualización por si este nuevo estudiante
+		-- está más cerca que los 10 actuales.
+		task.defer(updateVisibleStudents)
+	end
+	
+	-- [[CAMBIO PRINCIPAL]]:
+	-- Hemos eliminado toda la lógica que creaba un
+	-- 'GetPropertyChangedSignal("Position")' para este 'child'.
+	-- Ya no espiamos el movimiento del estudiante, solo el nuestro.
 end)
 
 studentsFolder.ChildRemoved:Connect(function(child)
@@ -234,10 +223,21 @@ if localPlayer.Character then
 end
 localPlayer.CharacterAdded:Connect(onCharacterAdded)
 
+-- [[NUEVO EVENTO AÑADIDO]]:
+-- Limpieza tomada del Script 2. Desactiva todo si el personaje muere.
+localPlayer.CharacterRemoving:Connect(function()
+	systemActive = false
+	for _, bb in pairs(activeBillboards) do
+		if bb then bb.Enabled = false end
+	end
+	visibleStudents = {}
+end)
+
 ------------------------------------------------------
 -- 🧩 Inicialización
 ------------------------------------------------------
 
+-- Pre-calentamos la cache para los estudiantes existentes
 for _, student in ipairs(studentsFolder:GetChildren()) do
 	if student:IsA("Model") and student ~= localPlayer.Character then
 		getOrCreateBillboard(student)
