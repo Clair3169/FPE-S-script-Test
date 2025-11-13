@@ -1,4 +1,4 @@
--- 🟦 Book BillboardGui Optimizado (versión corregida y funcional)
+-- 🟦 Book BillboardGui Robusto (versión final funcional)
 repeat task.wait() until game:IsLoaded()
 
 ------------------------------------------------------------
@@ -44,46 +44,61 @@ local function getLocalPos()
 	return root and root.Position or nil
 end
 
-local function removeBillboard(meshPart)
-	local bb = billboards[meshPart]
+-- Retorna BasePart válido de un libro (soporta Model o BasePart)
+local function getTargetPart(book)
+	if not book then return nil end
+	if book:IsA("BasePart") then return book end
+	if book:IsA("Model") then
+		if book.PrimaryPart then return book.PrimaryPart end
+		for _, d in ipairs(book:GetDescendants()) do
+			if d:IsA("BasePart") then
+				return d
+			end
+		end
+	end
+	return nil
+end
+
+local function removeBillboard(part)
+	local bb = billboards[part]
 	if bb then
 		if bb.Parent then bb:Destroy() end
+		billboards[part] = nil
 	end
-	billboards[meshPart] = nil
 end
 
 ------------------------------------------------------------
--- ✨ createBillboard (versión corregida con visibilidad garantizada)
+-- ✨ Crear Billboard
 ------------------------------------------------------------
-local function createBillboard(meshPart)
-	if asleep or not meshPart or not meshPart:IsA("BasePart") then return end
+local function createBillboard(target)
+	if asleep or not target or not target:IsA("BasePart") then return end
 
-	-- 🔄 Evita duplicados
-	if billboards[meshPart] then
-		if billboards[meshPart].Parent then
-			billboards[meshPart]:Destroy()
+	-- Evitar duplicados
+	if billboards[target] then
+		if billboards[target].Parent then
+			billboards[target]:Destroy()
 		end
-		billboards[meshPart] = nil
+		billboards[target] = nil
 	end
 
-	-- 🕐 Esperar a que el meshPart esté realmente en el Workspace
-	if not meshPart:IsDescendantOf(Workspace) then
+	-- Esperar que esté en Workspace
+	if not target:IsDescendantOf(Workspace) then
 		task.wait(0.1)
 	end
 
-	-- ⚙️ Crear BillboardGui visible
+	-- Crear BillboardGui
 	local bb = Instance.new("BillboardGui")
-	bb.Name = meshPart:GetDebugId() .. "_BB_Book"
+	bb.Name = "Book_Billboard_" .. target.Name
 	bb.AlwaysOnTop = true
 	bb.Size = UDim2.new(2.5, 0, 2.5, 0)
 	bb.MaxDistance = RENDER_DISTANCE
-	bb.StudsOffset = Vector3.new(0, meshPart.Size.Y + 1, 0)
+	bb.StudsOffset = Vector3.new(0, target.Size.Y + 1, 0)
 	bb.LightInfluence = 0
-	bb.Enabled = true -- 👈 visible desde el inicio
-	bb.Adornee = meshPart
+	bb.Enabled = true
+	bb.Adornee = target
 	bb.Parent = billboardsFolder
 
-	-- 🖼️ Imagen del libro
+	-- Imagen
 	local img = Instance.new("ImageLabel")
 	img.Name = "BookImage"
 	img.BackgroundTransparency = 1
@@ -93,30 +108,23 @@ local function createBillboard(meshPart)
 	img.ZIndex = 2
 	img.Parent = bb
 
-	local bg = Instance.new("Frame")
-	bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	bg.BackgroundTransparency = 1
-	bg.Size = UDim2.new(1, 0, 1, 0)
-	bg.ZIndex = 1
-	bg.Parent = bb
-
-	billboards[meshPart] = bb
+	billboards[target] = bb
 end
 
 ------------------------------------------------------------
--- 🔁 updateBillboardsInRange
+-- 🔁 Actualizar visibilidad según distancia
 ------------------------------------------------------------
 local function updateBillboardsInRange()
 	local localPos = getLocalPos()
-	if asleep or not booksFolder or not localPos then return end
+	if asleep or not localPos then return end
 
-	for meshPart, bb in pairs(billboards) do
-		if not meshPart or not meshPart.Parent then
-			removeBillboard(meshPart)
+	for part, bb in pairs(billboards) do
+		if not part or not part.Parent then
+			removeBillboard(part)
 		else
-			local dist = (meshPart.Position - localPos).Magnitude
+			local dist = (part.Position - localPos).Magnitude
 			local visible = dist <= RENDER_DISTANCE
-			if bb and bb.Enabled ~= visible then
+			if bb.Enabled ~= visible then
 				bb.Enabled = visible
 			end
 		end
@@ -124,13 +132,15 @@ local function updateBillboardsInRange()
 end
 
 ------------------------------------------------------------
--- 🚀 Activación inicial
+-- 🚀 Activar libros existentes
 ------------------------------------------------------------
 local function activateBooks()
 	if asleep or not booksFolder then return end
+
 	for _, obj in ipairs(booksFolder:GetChildren()) do
-		if obj:IsA("BasePart") then
-			createBillboard(obj)
+		local target = getTargetPart(obj)
+		if target then
+			createBillboard(target)
 		end
 	end
 	updateBillboardsInRange()
@@ -145,19 +155,21 @@ local function connectBookEvents()
 
 	booksFolder.ChildAdded:Connect(function(child)
 		if asleep then return end
-		if child:IsA("BasePart") then
-			createBillboard(child)
+		local target = getTargetPart(child)
+		if target then
+			createBillboard(target)
 			updateBillboardsInRange()
 		end
 	end)
 
 	booksFolder.ChildRemoved:Connect(function(child)
-		removeBillboard(child)
+		local target = getTargetPart(child)
+		if target then removeBillboard(target) end
 	end)
 end
 
 ------------------------------------------------------------
--- 😴 Estado dormido (Alices / Teachers)
+-- 😴 Estado dormido
 ------------------------------------------------------------
 local function scheduleCleanup()
 	if cleanupTimer then return end
@@ -166,18 +178,10 @@ local function scheduleCleanup()
 			cleanupTimer = nil
 			return
 		end
-
-		for meshPart, bb in pairs(billboards) do
+		for part, bb in pairs(billboards) do
 			if bb and bb.Parent then bb:Destroy() end
-			billboards[meshPart] = nil
+			billboards[part] = nil
 		end
-
-		for _, obj in ipairs(billboardsFolder:GetChildren()) do
-			if obj:IsA("BillboardGui") then
-				obj:Destroy()
-			end
-		end
-
 		cleanupTimer = nil
 	end)
 end
@@ -192,7 +196,7 @@ local function checkSleepState()
 		asleep = newAsleep
 		if asleep then
 			for _, bb in pairs(billboards) do
-				if bb then bb.Enabled = false end
+				bb.Enabled = false
 			end
 			scheduleCleanup()
 		else
@@ -220,15 +224,15 @@ end)
 
 Workspace.ChildRemoved:Connect(function(child)
 	if child == booksFolder then
-		for meshPart in pairs(billboards) do
-			removeBillboard(meshPart)
+		for part in pairs(billboards) do
+			removeBillboard(part)
 		end
 		booksFolder = nil
 	end
 end)
 
 ------------------------------------------------------------
--- 🧍‍♂️ Player y movimiento
+-- 🧍‍♂️ Movimiento del jugador
 ------------------------------------------------------------
 local function hookPlayerMovement(character)
 	local root = character:WaitForChild("HumanoidRootPart", 3)
@@ -256,19 +260,24 @@ end)
 ------------------------------------------------------------
 task.spawn(function()
 	while task.wait(AUTOVERIFIER_INTERVAL) do
-		if asleep or not booksFolder then continue end
+		if asleep then continue end
+		if not booksFolder then
+			booksFolder = Workspace:FindFirstChild("Books")
+			continue
+		end
 
 		local missing = false
 		for _, obj in ipairs(booksFolder:GetChildren()) do
-			if obj:IsA("BasePart") and not billboards[obj] then
+			local target = getTargetPart(obj)
+			if target and not billboards[target] then
+				createBillboard(target)
 				missing = true
-				createBillboard(obj)
 			end
 		end
 
-		for meshPart, bb in pairs(billboards) do
-			if not meshPart or not meshPart.Parent then
-				removeBillboard(meshPart)
+		for part, bb in pairs(billboards) do
+			if not part or not part.Parent then
+				removeBillboard(part)
 			end
 		end
 
