@@ -93,10 +93,9 @@ local function createBillboard(meshPart)
 	img.ZIndex = 2
 	img.Parent = bb
 
-	-- 🔲 Fondo (opcional, mejora visual)
 	local bg = Instance.new("Frame")
 	bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	bg.BackgroundTransparency = 0.7
+	bg.BackgroundTransparency = 1
 	bg.Size = UDim2.new(1, 0, 1, 0)
 	bg.ZIndex = 1
 	bg.Parent = bb
