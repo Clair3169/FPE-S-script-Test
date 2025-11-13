@@ -1,44 +1,59 @@
--- 🟦 Teachers/Alices ESP (BillboardGui Final, Estable, sin bucles)
+-- 🟦 ESP BillboardGui (con caché físico + arranque seguro + observación por equipo)
 repeat task.wait() until game:IsLoaded()
 
--- ⚙️ Servicios
+------------------------------------------------------
+-- ⚙️ Servicios y Configuración
+------------------------------------------------------
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-
--- 👤 Jugador local
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then return end
 
--- 📁 Carpetas
 local Folders = {
 	Alices   = Workspace:WaitForChild("Alices"),
 	Students = Workspace:WaitForChild("Students"),
 	Teachers = Workspace:WaitForChild("Teachers"),
 }
 
--- ⚙️ Configuración
 local MAX = { Teachers = 4, Alices = 2 }
 local MAX_RENDER_DISTANCE = 250
 local BILLBOARD_SIZE = UDim2.new(0, 45, 0, 45)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
-local UPDATE_THRESHOLD = 5 -- Distancia en studs que el jugador debe moverse para actualizar
-
--- 🖼️ Imágenes
-local BASE_IDS = {
-	Bloomie     = "129090409260807",
-	Circle      = "72842137403522",
-	Thavel      = "126007170470250",
-	Alice       = "94023609108845",
-	AlicePhase2 = "78066130044573",
-}
-local CIRCLE_ENRAGED_ID = "108867117884833"
-
--- 📦 Estado
-local ActiveBillboards = {}
-local ActiveCounts = { Teachers = 0, Alices = 0 }
+local UPDATE_THRESHOLD = 5
 
 ------------------------------------------------------
--- 🔧 Utilidades
+-- 🖼️ IDs de imágenes
+------------------------------------------------------
+local BASE_IDS = {
+	Bloomie     = "rbxassetid://129090409260807",
+	Circle      = "rbxassetid://72842137403522",
+	Thavel      = "rbxassetid://126007170470250",
+	Alice       = "rbxassetid://94023609108845",
+	AlicePhase2 = "rbxassetid://78066130044573",
+}
+local CIRCLE_ENRAGED_ID = "rbxassetid://108867117884833"
+
+------------------------------------------------------
+-- 📦 Carpeta de caché físico (seguridad de organización)
+------------------------------------------------------
+local BillboardCacheFolder = Workspace:FindFirstChild("BillboardCache")
+if not BillboardCacheFolder then
+	BillboardCacheFolder = Instance.new("Folder")
+	BillboardCacheFolder.Name = "BillboardCache"
+	BillboardCacheFolder.Parent = Workspace
+end
+
+------------------------------------------------------
+-- 📦 Estado / Caché lógico
+------------------------------------------------------
+local Cache = {
+	Billboards = {}, -- modelo → {gui, folder, headRef}
+	Counts = { Teachers = 0, Alices = 0 },
+}
+
+------------------------------------------------------
+-- 🔧 Funciones auxiliares
 ------------------------------------------------------
 local function getImageIdForModel(model)
 	if not model then return nil end
@@ -56,7 +71,6 @@ local function getImageIdForModel(model)
 	elseif tname == "AlicePhase2" then
 		return BASE_IDS.AlicePhase2
 	end
-	return nil
 end
 
 local function getRealHead(model)
@@ -76,18 +90,30 @@ local function getDistanceFromLocal(head)
 end
 
 ------------------------------------------------------
--- 🧩 Billboard Handling
+-- 📦 Sistema de caché Billboard (con carpeta física)
 ------------------------------------------------------
-local function createBillboardFor(model, folderName)
+local function createOrReuseBillboard(model, folderName)
 	if not model or not folderName then return end
-	if ActiveBillboards[model] then return end
+	if Cache.Billboards[model] then
+		local data = Cache.Billboards[model]
+		local head = getRealHead(model)
+		local img = data.gui:FindFirstChild("RoleImage")
+		if head and img then
+			img.Image = getImageIdForModel(model) or img.Image
+			data.gui.Adornee = head
+			data.headRef = head
+			data.gui.Enabled = true
+		end
+		return
+	end
 
-	-- 🔒 Respeta límites
-	if folderName == "Teachers" and ActiveCounts.Teachers >= MAX.Teachers then return end
-	if folderName == "Alices" and ActiveCounts.Alices >= MAX.Alices then return end
+	-- Límite de instancias
+	if folderName == "Teachers" and Cache.Counts.Teachers >= MAX.Teachers then return end
+	if folderName == "Alices" and Cache.Counts.Alices >= MAX.Alices then return end
 
+	-- Espera cabeza válida
 	local head, imageId
-	for i = 1, 25 do
+	for _ = 1, 25 do
 		head = getRealHead(model)
 		imageId = getImageIdForModel(model)
 		if head and imageId then break end
@@ -95,52 +121,53 @@ local function createBillboardFor(model, folderName)
 	end
 	if not head or not imageId then return end
 
+	-- Crear Billboard
 	local bb = Instance.new("BillboardGui")
-	bb.Name = "RoleBillboardGui"
+	bb.Name = model.Name .. "_Billboard"
 	bb.Size = BILLBOARD_SIZE
 	bb.StudsOffset = STUDS_OFFSET
 	bb.AlwaysOnTop = true
 	bb.MaxDistance = MAX_RENDER_DISTANCE
 	bb.Adornee = head
-	bb.Parent = head
+	bb.Parent = BillboardCacheFolder -- 📦 se guarda en carpeta física
 
 	local img = Instance.new("ImageLabel")
 	img.Name = "RoleImage"
 	img.Size = UDim2.new(1, 0, 1, 0)
 	img.BackgroundTransparency = 1
-	img.Image = "rbxassetid://" .. tostring(imageId)
+	img.Image = imageId
 	img.ScaleType = Enum.ScaleType.Fit
 	img.Parent = bb
 
-	ActiveBillboards[model] = { gui = bb, folder = folderName }
+	Cache.Billboards[model] = { gui = bb, folder = folderName, headRef = head }
 
 	if folderName == "Teachers" then
-		ActiveCounts.Teachers += 1
+		Cache.Counts.Teachers += 1
 	elseif folderName == "Alices" then
-		ActiveCounts.Alices += 1
+		Cache.Counts.Alices += 1
 	end
 end
 
 local function destroyBillboard(model)
-	local data = ActiveBillboards[model]
+	local data = Cache.Billboards[model]
 	if not data then return end
-	if data.gui and data.gui.Parent then data.gui:Destroy() end
+	if data.gui then data.gui:Destroy() end
 
 	if data.folder == "Teachers" then
-		ActiveCounts.Teachers = math.max(0, ActiveCounts.Teachers - 1)
+		Cache.Counts.Teachers = math.max(0, Cache.Counts.Teachers - 1)
 	elseif data.folder == "Alices" then
-		ActiveCounts.Alices = math.max(0, ActiveCounts.Alices - 1)
+		Cache.Counts.Alices = math.max(0, Cache.Counts.Alices - 1)
 	end
 
-	ActiveBillboards[model] = nil
+	Cache.Billboards[model] = nil
 end
 
 ------------------------------------------------------
--- 🧩 Detección y reglas
+-- 🔍 Reglas de observación por equipo
 ------------------------------------------------------
 local function detectLocalFolder()
 	for name, folder in pairs(Folders) do
-		if folder and folder:FindFirstChild(LocalPlayer.Name) then
+		if folder:FindFirstChild(LocalPlayer.Name) then
 			return name
 		end
 	end
@@ -162,36 +189,28 @@ local function shouldLocalSeeModel(localFolder, targetFolder, model)
 end
 
 ------------------------------------------------------
--- 🧩 Visibilidad
+-- 👁️ Visibilidad dinámica
 ------------------------------------------------------
-local function updateAllBillboardsVisibility()
-	if not LocalPlayer.Character then return end
-
-	-- Recorre todos los billboards que hemos creado
-	for model, data in pairs(ActiveBillboards) do
-		-- Reutiliza tu función original para actualizar cada uno
-		if data and data.gui then
-			updateVisibility(model)
-		end
-	end
-end
-
 local function updateVisibility(model)
-	local data = ActiveBillboards[model]
-	if not data then return end
-	local head = getRealHead(model)
-	if not head then 
-		-- Si la cabeza desaparece, destruimos el billboard para limpiar.
-		return destroyBillboard(model) 
-	end 
+	local data = Cache.Billboards[model]
+	if not data or not data.gui then return end
+	local head = data.headRef or getRealHead(model)
+	if not head then return destroyBillboard(model) end
 	local dist = getDistanceFromLocal(head)
 	data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
 end
+
+local function updateAllVisibility()
+	for model in pairs(Cache.Billboards) do
+		updateVisibility(model)
+	end
+end
+
 ------------------------------------------------------
--- 🧩 Eventos por modelo
+-- 🧱 Enganche de señales de modelo
 ------------------------------------------------------
 local function hookModelSignals(model, folderName)
-	if not model or not model:IsA("Model") then return end
+	if not model:IsA("Model") then return end
 	if model:FindFirstChild("__BillboardHooked") then return end
 
 	local marker = Instance.new("BoolValue")
@@ -199,17 +218,18 @@ local function hookModelSignals(model, folderName)
 	marker.Parent = model
 
 	model:GetAttributeChangedSignal("TeacherName"):Connect(function()
-		destroyBillboard(model)
-		createBillboardFor(model, folderName)
+		createOrReuseBillboard(model, folderName)
 	end)
 
 	model:GetAttributeChangedSignal("Enraged"):Connect(function()
-		local data = ActiveBillboards[model]
-		if not data then return end
-		local bb = data.gui
-		local img = bb and bb:FindFirstChild("RoleImage")
-		local newId = getImageIdForModel(model)
-		if img and newId then img.Image = "rbxassetid://" .. tostring(newId) end
+		local data = Cache.Billboards[model]
+		if data and data.gui then
+			local img = data.gui:FindFirstChild("RoleImage")
+			if img then
+				local newId = getImageIdForModel(model)
+				if newId then img.Image = newId end
+			end
+		end
 	end)
 
 	model.AncestryChanged:Connect(function(_, parent)
@@ -217,16 +237,15 @@ local function hookModelSignals(model, folderName)
 			destroyBillboard(model)
 		else
 			task.defer(function()
-				createBillboardFor(model, folderName)
+				createOrReuseBillboard(model, folderName)
 				updateVisibility(model)
 			end)
 		end
 	end)
-	
 end
 
 ------------------------------------------------------
--- 🧩 Escaneo inicial y eventos
+-- 🚀 Arranque seguro (procesa jugadores ya presentes)
 ------------------------------------------------------
 local function scanAndApply(localFolder)
 	local teacherCount, aliceCount = 0, 0
@@ -242,18 +261,11 @@ local function scanAndApply(localFolder)
 				continue
 			end
 
-			if folderName == "Teachers" and teacherCount >= MAX.Teachers then
-				destroyBillboard(model)
-				continue
-			elseif folderName == "Alices" and aliceCount >= MAX.Alices then
-				destroyBillboard(model)
-				continue
-			end
+			if folderName == "Teachers" and teacherCount >= MAX.Teachers then continue end
+			if folderName == "Alices" and aliceCount >= MAX.Alices then continue end
 
-			if not ActiveBillboards[model] then
-				createBillboardFor(model, folderName)
-				hookModelSignals(model, folderName)
-			end
+			createOrReuseBillboard(model, folderName)
+			hookModelSignals(model, folderName)
 			updateVisibility(model)
 
 			if folderName == "Teachers" then teacherCount += 1 end
@@ -262,6 +274,9 @@ local function scanAndApply(localFolder)
 	end
 end
 
+------------------------------------------------------
+-- 🪝 Eventos globales (nuevos modelos)
+------------------------------------------------------
 for _, folderName in ipairs({"Alices", "Teachers"}) do
 	local folder = Folders[folderName]
 	if not folder then continue end
@@ -271,7 +286,7 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 		local localFolder = detectLocalFolder()
 		if shouldLocalSeeModel(localFolder, folderName, child) then
 			task.defer(function()
-				createBillboardFor(child, folderName)
+				createOrReuseBillboard(child, folderName)
 				hookModelSignals(child, folderName)
 				updateVisibility(child)
 			end)
@@ -283,10 +298,13 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 	end)
 end
 
+------------------------------------------------------
+-- 🧍 Control del jugador local
+------------------------------------------------------
 local function onCharacterAdded(character)
-	task.wait(0.5) -- Espera a que el personaje esté listo
-	scanAndApply(detectLocalFolder()) -- Escanea al aparecer
-	updateAllBillboardsVisibility() -- Actualiza la visibilidad inicial
+	task.wait(0.5)
+	scanAndApply(detectLocalFolder())
+	updateAllVisibility()
 
 	local root = character:WaitForChild("HumanoidRootPart", 3)
 	if not root then return end
@@ -294,22 +312,18 @@ local function onCharacterAdded(character)
 	local lastPos = root.Position
 	root:GetPropertyChangedSignal("Position"):Connect(function()
 		local newPos = root.Position
-		-- Si el jugador se mueve lo suficiente...
 		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
 			lastPos = newPos
-			-- ...actualiza la visibilidad de TODOS los billboards
-			updateAllBillboardsVisibility()
+			updateAllVisibility()
 		end
 	end)
 
-	-- Esto es importante: si cambias de equipo (de carpeta)
 	character:GetPropertyChangedSignal("Parent"):Connect(function()
 		task.defer(scanAndApply, detectLocalFolder())
-		task.defer(updateAllBillboardsVisibility)
+		task.defer(updateAllVisibility)
 	end)
 end
 
--- Conecta la función
 if LocalPlayer.Character then
 	onCharacterAdded(LocalPlayer.Character)
 end
