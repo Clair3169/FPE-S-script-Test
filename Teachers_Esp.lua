@@ -37,10 +37,10 @@ local CIRCLE_ENRAGED_ID = "rbxassetid://108867117884833"
 ------------------------------------------------------
 -- 📦 Carpeta de caché físico (seguridad de organización)
 ------------------------------------------------------
-local BillboardCacheFolder = Workspace:FindFirstChild("BillboardCache")
+local BillboardCacheFolder = Workspace:FindFirstChild("BillboardTeachers_Cache")
 if not BillboardCacheFolder then
 	BillboardCacheFolder = Instance.new("Folder")
-	BillboardCacheFolder.Name = "BillboardCache"
+	BillboardCacheFolder.Name = "BillboardTeachers_Cache"
 	BillboardCacheFolder.Parent = Workspace
 end
 
