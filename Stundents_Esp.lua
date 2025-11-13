@@ -1,4 +1,4 @@
--- 🧿 Student Billboard ESP (Optimizado con Cache y Limpieza)
+-- 🧿 Student Billboard ESP (Optimizado con Cache, Limpieza y Seguridad de Spawn)
 repeat task.wait() until game:IsLoaded()
 
 ------------------------------------------------------------
@@ -205,14 +205,43 @@ local function updateSystemStatus(force)
 end
 
 ------------------------------------------------------------
--- 🧍‍♂️ Eventos Students
+-- 🧍‍♂️ Eventos Students (mejorado con verificación de Head/BasePart)
 ------------------------------------------------------------
 studentsFolder.ChildAdded:Connect(function(child)
 	if not systemActive then return end
-	if child:IsA("Model") and child ~= localPlayer.Character then
-		getOrCreateBillboard(child)
-		task.defer(updateVisibleStudents)
-	end
+	if not child:IsA("Model") or child == localPlayer.Character then return end
+
+	-- 🕓 Esperar a que el modelo tenga Head o BasePart (máx 5 segundos)
+	task.spawn(function()
+		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
+		local tries = 0
+		while not head and tries < 50 do
+			task.wait(0.1)
+			head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
+			tries += 1
+		end
+
+		if head then
+			local billboard = getOrCreateBillboard(child)
+			if billboard then
+				-- ⚡ Si el jugador entra cerca, forzar visibilidad inmediata
+				local localChar = localPlayer.Character
+				if localChar then
+					local localPos = getModelPosition(localChar)
+					local targetPos = getModelPosition(child)
+					if localPos and targetPos then
+						local dist = (localPos - targetPos).Magnitude
+						if dist <= MAX_DISTANCE then
+							updateBillboardState(child, true)
+						end
+					end
+				end
+			end
+			task.defer(updateVisibleStudents)
+		else
+			warn("[BillboardESP] No se encontró Head/BasePart en el modelo de " .. child.Name)
+		end
+	end)
 end)
 
 studentsFolder.ChildRemoved:Connect(function(child)
