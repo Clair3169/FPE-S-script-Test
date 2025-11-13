@@ -29,8 +29,8 @@ local cleanupTimer = nil
 ------------------------------------------------------------
 -- 📦 Cache persistente
 ------------------------------------------------------------
-local billboardCache = Workspace:FindFirstChild("BillboardCache_Students") or Instance.new("Folder")
-billboardCache.Name = "BillboardCache_Students"
+local billboardCache = Workspace:FindFirstChild("BillboardStudrnts_Cache") or Instance.new("Folder")
+billboardCache.Name = "BillboardStudrnts_Cache"
 billboardCache.Parent = Workspace
 
 ------------------------------------------------------------
