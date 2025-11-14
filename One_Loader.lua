@@ -17,7 +17,8 @@ local urls = {
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/SprintFake.lua",
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/TextLabel.lua",
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Esp_Books.lua",
-	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Anti_Camera.lua"
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Anti_Camera.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/NO_RAGDOLL.lua"
 }
 
 -- NOMBRE DE LA MARCA PARA RECORDAR QUE YA SE EJECUTÓ
