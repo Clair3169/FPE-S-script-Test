@@ -218,7 +218,7 @@ Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Books" and child:IsA("Folder") then
 		booksFolder = child
 		connectBookEvents()
-		task.defer(activateBooks)
+		task.wait(0.1); activateBooks()	
 	end
 end)
 
@@ -294,7 +294,10 @@ local function initializeBookSystem()
 	checkSleepState()
 	booksFolder = booksFolder or Workspace:FindFirstChild("Books")
 	if booksFolder then connectBookEvents() end
-	if booksFolder and not asleep then activateBooks() end
+	if booksFolder and not asleep then
+    task.wait(0.1)
+    activateBooks()
+	end
 end
 
 player.CharacterAdded:Connect(function(char)
