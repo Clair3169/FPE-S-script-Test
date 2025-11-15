@@ -265,21 +265,23 @@ local function updateVisibility(model)
 		data.gui.Adornee = head
 	end
 
+	-- 🛡️ INICIO DE LA MEJORA DE SEGURIDAD
+	-- 1. Chequear si el jugador local DEBE ver este modelo por reglas de equipo
+	local localFolder = detectLocalFolder()
+	local canSeeBasedOnTeam = shouldLocalSeeModel(localFolder, data.folder, model)
+
+	if not canSeeBasedOnTeam then
+		-- Si no debe verlo por equipo, deshabilitar y salir.
+		data.gui.Enabled = false
+		return
+	end
+
+	-- 2. Si puede verlo, chequear distancia
 	local dist = getDistanceFromLocal(head)
 	local shouldShow = dist <= MAX_RENDER_DISTANCE
 
-	-- Si está dentro del rango y por alguna razón está disabled, reactivar.
-	if shouldShow and data.gui.Enabled == false then
-		data.gui.Enabled = true
-	end
-
 	data.gui.Enabled = shouldShow
-end
-
-local function updateAllVisibility()
-	for model, _ in pairs(Cache.Billboards) do
-		updateVisibility(model)
-	end
+	-- 🛡️ FIN DE LA MEJORA
 end
 
 ------------------------------------------------------
@@ -488,24 +490,12 @@ local function onCharacterAdded(character)
 		-- solo actualizar si se movió suficiente
 		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
 			lastPos = newPos
-			updateAllVisibility()
-
-			-- Resync forzado: reactivar billboards que ya deberían estar visibles
-			local localFolderNow = detectLocalFolder()
-			for model, data in pairs(Cache.Billboards) do
-				if data and data.headRef and data.gui then
-					local d = getDistanceFromLocal(data.headRef)
-					if d <= MAX_RENDER_DISTANCE then
-						if shouldLocalSeeModel(localFolderNow, data.folder, model) then
-							data.gui.Enabled = true
-						else
-							data.gui.Enabled = false
-						end
-					else
-						data.gui.Enabled = false
-					end
-				end
-			end
+			
+			-- 🛡️ ESTA ES LA SEGURIDAD EXTRA
+			-- En lugar de solo actualizar visibilidad, ejecutamos el escaneo completo.
+			-- Esto buscará modelos que no tengan billboard (por fallo de creación)
+			-- y los creará si es necesario, además de actualizar todos los demás.
+			scanAndApply(detectLocalFolder())
 		end
 	end)
 
