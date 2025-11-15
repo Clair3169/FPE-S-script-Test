@@ -235,42 +235,34 @@ end
 -- 🧍‍♂️ Eventos Students
 ------------------------------------------------------------
 studentsFolder.ChildAdded:Connect(function(child)
-	if not systemActive then return end
-	if not child:IsA("Model") or child == localPlayer.Character then return end
-
-	task.spawn(function()
-		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
-		local tries = 0
-		while not head and tries < 50 do
-			task.wait(0.1)
-			head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
-			tries += 1
-		end
-
-		if head then
-			queueBillboardCreation(child)
-			local billboard = activeBillboards[child]
-
-			if billboard then
-				local localChar = localPlayer.Character
-				if localChar then
-					local localPos = getModelPosition(localChar)
-					local targetPos = getModelPosition(child)
-					if localPos and targetPos then
-						local dist = (localPos - targetPos).Magnitude
-						if dist <= MAX_DISTANCE then
-							updateBillboardState(child, true)
-						end
-					end
-				end
-			end
-
-			task.defer(updateVisibleStudents)
-		else
-			warn("[BillboardESP] No se encontró Head/BasePart en " .. child.Name)
-		end
-	end)
+    -- ... (esta función se queda igual que la tuya) ...
 end)
+
+-- VVV ESTA ES LA FUNCIÓN QUE DEBES REEMPLAZAR VVV --
+studentsFolder.ChildRemoved:Connect(function(child)
+	local bb = activeBillboards[child]
+	if bb then
+		-- Solo lo desactivamos y quitamos su Adornee.
+		-- El BillboardGUI permanecerá en la carpeta 'billboardCache'.
+		bb.Enabled = false
+		bb.Adornee = nil 
+	end
+
+	-- Lo quitamos de las tablas de seguimiento activo.
+	activeBillboards[child] = nil
+	visibleStudents[child] = nil
+
+	-- ❗ NO destruimos el BillboardGUI del cache.
+	-- Al eliminar las líneas que lo destruían, la función
+	-- 'getOrCreateBillboard' lo encontrará y reutilizará 
+	-- la próxima vez que el 'child' sea añadido (al reaparecer).
+
+	-- local cached = billboardCache:FindFirstChild(child.Name .. "_BB_Student")
+	-- if cached and cached:IsA("BillboardGui") then
+	-- 	cached:Destroy() -- <--- ESTAS LÍNEAS SE ELIMINAN O COMENTAN
+	-- end
+end)
+-- ^^^ ESTA ES LA FUNCIÓN QUE DEBES REEMPLAZAR ^^^ --
 
 studentsFolder.ChildRemoved:Connect(function(child)
 	local bb = activeBillboards[child]
