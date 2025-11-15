@@ -89,6 +89,7 @@ local function getDistanceFromLocal(head)
 	local myHead = char and char:FindFirstChild("Head")
 	if not (myHead and head) then return math.huge end
 	-- proteger por posiciones nil
+	-- (Si 'head' es una referencia destruida, 'head.Position' será nil y esto devolverá math.huge)
 	if not myHead.Position or not head.Position then return math.huge end
 	return (myHead.Position - head.Position).Magnitude
 end
@@ -122,6 +123,13 @@ end
 ------------------------------------------------------
 local function createOrReuseBillboard(model, folderName)
 	if not model or not folderName then return end
+
+	-- --- 🔥 NUEVA LÍNEA DE SEGURIDAD ---
+	-- No crear NUNCA un billboard para el LocalPlayer
+	if model.Name == LocalPlayer.Name then
+		return -- Salir de la función inmediatamente
+	end
+	-- --- FIN DE LA SEGURIDAD ---
 
 	-- Reusar si existe
 	local existing = Cache.Billboards[model]
@@ -255,17 +263,23 @@ local function updateVisibility(model)
 
 	-- Reforzar referencia a la cabeza (si se perdió)
 	local head = data.headRef
+	
+	-- 🔥 ESTA ES LA "SEGURIDAD" CLAVE 🔥
+	-- Si la 'headRef' que teníamos guardada ya no existe (está destruida/fantasma),
+	-- 'head.Parent' será nil, y este 'if' se activará.
 	if not (head and head.Parent) then
-		head = getRealHead(model)
+		head = getRealHead(model) -- Intenta buscar la *nueva* cabeza
 		if not head then
-			-- si no existe cabeza válida, destruir billboard
-			return maybeDestroyBillboardIfModelGone(model)
+			-- si no existe cabeza válida AHORA, no podemos hacer nada.
+			-- Deshabilitar por si acaso y salir.
+			data.gui.Enabled = false
+			return
 		end
+		-- ¡Éxito! Encontramos la nueva cabeza. La guardamos.
 		data.headRef = head
 		data.gui.Adornee = head
 	end
 
-	-- 🛡️ INICIO DE LA MEJORA DE SEGURIDAD
 	-- 1. Chequear si el jugador local DEBE ver este modelo por reglas de equipo
 	local localFolder = detectLocalFolder()
 	local canSeeBasedOnTeam = shouldLocalSeeModel(localFolder, data.folder, model)
@@ -277,11 +291,21 @@ local function updateVisibility(model)
 	end
 
 	-- 2. Si puede verlo, chequear distancia
-	local dist = getDistanceFromLocal(head)
+	local dist = getDistanceFromLocal(head) -- 'head' ahora es VÁLIDA
 	local shouldShow = dist <= MAX_RENDER_DISTANCE
 
 	data.gui.Enabled = shouldShow
-	-- 🛡️ FIN DE LA MEJORA
+end
+
+-- --- Definición de la función 'updateAllVisibility' ---
+local function updateAllVisibility()
+	-- Itera sobre todos los billboards que tenemos en caché
+	for model, data in pairs(Cache.Billboards) do
+		if data and data.gui then
+			-- Re-ejecuta la lógica de visibilidad para este modelo
+			updateVisibility(model)
+		end
+	end
 end
 
 ------------------------------------------------------
@@ -290,6 +314,13 @@ end
 local function hookModelSignals(model, folderName)
 	if not model or not model:IsA("Model") then return end
 	if model:FindFirstChild("__BillboardHooked") then return end
+
+	-- --- 🔥 NUEVA LÍNEA DE SEGURIDAD ---
+	-- No enganchar NUNCA señales en el LocalPlayer
+	if model.Name == LocalPlayer.Name then
+		return -- Salir de la función inmediatamente
+	end
+	-- --- FIN DE LA SEGURIDAD ---
 
 	local marker = Instance.new("BoolValue")
 	marker.Name = "__BillboardHooked"
@@ -355,12 +386,7 @@ local function scanAndApply(localFolder)
 				if not child or not child:IsA("Model") then
 					-- skip
 				else
-					-- NO destruir por el simple hecho de que el jugador local cambió o murió.
-					-- Solo destruir si el modelo ya no está en su carpeta (se chequea dentro de updateVisibility / AncestryChanged).
 					if not shouldLocalSeeModel(localFolder, folderName, child) then
-						-- Si el local no debe ver este modelo, solo no lo creamos/activamos.
-						-- No lo destruimos aquí (evita borrar por muerte del jugador local).
-						-- Simplemente aseguramos que no haya billboard creado/activo para este cliente.
 						local existing = Cache.Billboards[child]
 						if existing and existing.gui then
 							existing.gui.Enabled = false
@@ -368,7 +394,7 @@ local function scanAndApply(localFolder)
 					else
 						-- respetar límites por tipo al crear/activar
 						if folderName == "Teachers" and teachersSeen >= MAX.Teachers then
-							-- skip activar/crear más
+							-- skip
 						elseif folderName == "Alices" and alicesSeen >= MAX.Alices then
 							-- skip
 						else
@@ -395,6 +421,14 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 	else
 		folder.ChildAdded:Connect(function(child)
 			if not child or not child:IsA("Model") then return end
+
+			-- --- 🔥 NUEVA LÍNEA DE SEGURIDAD (Eficiencia) ---
+			-- Salida rápida si el que se unió es el jugador local
+			if child.Name == LocalPlayer.Name then
+				return
+			end
+			-- --- FIN DE LA SEGURIDAD ---
+
 			-- detectar folder del local en el momento de la adición
 			local localFolder = detectLocalFolder()
 			-- crear billboard siempre (se elegirá si activarlo o no según shouldLocalSeeModel y MAX)
@@ -427,79 +461,28 @@ local function onCharacterAdded(character)
 
 	-- Re-scan pero sin destruir por muerte del jugador local
 	scanAndApply(localFolder)
+	
+	-- Esta es la llamada clave.
+	-- Fuerza a 'updateVisibility' a ejecutarse para TODOS los billboards.
 	updateAllVisibility()
-
-	-- 🔥 FIX: Reasignar Adornee y reactivar billboards que este cliente debe ver (respetando MAX y distancia)
-	task.defer(function()
-		local visibleCounts = { Teachers = 0, Alices = 0 }
-		for model, data in pairs(Cache.Billboards) do
-			if data and data.gui then
-				-- reasignar head/adornee si es posible
-				local head = getRealHead(model)
-				if head then
-					data.gui.Adornee = head
-					data.headRef = head
-				end
-
-				-- decidir si este cliente debe ver este modelo ahora
-				local shouldSee = shouldLocalSeeModel(localFolder, data.folder, model)
-				if shouldSee and data.headRef then
-					local dist = getDistanceFromLocal(data.headRef)
-					-- respetar distancia y límites MAX
-					if dist <= MAX_RENDER_DISTANCE then
-						if data.folder == "Teachers" then
-							if visibleCounts.Teachers < MAX.Teachers then
-								data.gui.Enabled = true
-								visibleCounts.Teachers = visibleCounts.Teachers + 1
-							else
-								data.gui.Enabled = false
-							end
-						elseif data.folder == "Alices" then
-							if visibleCounts.Alices < MAX.Alices then
-								data.gui.Enabled = true
-								visibleCounts.Alices = visibleCounts.Alices + 1
-							else
-								data.gui.Enabled = false
-							end
-						else
-							-- fallback
-							data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
-						end
-					else
-						data.gui.Enabled = false
-					end
-				else
-					-- no corresponde ver este modelo con el folder actual del jugador
-					data.gui.Enabled = false
-				end
-			end
-		end
-
-		-- ajuste final por si hace falta
-		updateAllVisibility()
-	end)
 
 	local root = character:WaitForChild("HumanoidRootPart", 3)
 	if not root then return end
 
 	local lastPos = root.Position
+	
+	-- Evento de movimiento (ya optimizado)
 	root:GetPropertyChangedSignal("Position"):Connect(function()
 		local newPos = root.Position
-		-- si la posición aun no tiene valor válido, salir
 		if not newPos then return end
-		-- solo actualizar si se movió suficiente
+		
 		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
 			lastPos = newPos
-			
-			-- 🛡️ ESTA ES LA SEGURIDAD EXTRA
-			-- En lugar de solo actualizar visibilidad, ejecutamos el escaneo completo.
-			-- Esto buscará modelos que no tengan billboard (por fallo de creación)
-			-- y los creará si es necesario, además de actualizar todos los demás.
-			scanAndApply(detectLocalFolder())
+			updateAllVisibility()
 		end
 	end)
 
-	-- si el character se reparenta (ej. respawn), re-scan y actualizar (sin destruir)
+	-- si el character se reparenta (ej. respawn), re-scan y actualizar
 	character:GetPropertyChangedSignal("Parent"):Connect(function()
 		task.defer(function()
 			scanAndApply(detectLocalFolder())
