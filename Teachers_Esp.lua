@@ -93,6 +93,30 @@ local function getDistanceFromLocal(head)
 	return (myHead.Position - head.Position).Magnitude
 end
 
+local function isModelInFolder(model, folderName)
+	local folder = Folders[folderName]
+	if not folder then return false end
+	-- robusto: IsDescendantOf permite subestructura
+	return model and model:IsDescendantOf(folder)
+end
+
+local function destroyBillboardStrict(model)
+	-- elimina sin condiciones extra (uso interno cuando queremos forzar borrado)
+	local data = Cache.Billboards[model]
+	if not data then return end
+	if data.gui and data.gui.Parent then
+		data.gui:Destroy()
+	end
+
+	if data.folder == "Teachers" then
+		Cache.Counts.Teachers = math.max(0, Cache.Counts.Teachers - 1)
+	elseif data.folder == "Alices" then
+		Cache.Counts.Alices = math.max(0, Cache.Counts.Alices - 1)
+	end
+
+	Cache.Billboards[model] = nil
+end
+
 ------------------------------------------------------
 -- 📦 Sistema de caché Billboard (con carpeta física)
 ------------------------------------------------------
@@ -115,7 +139,7 @@ local function createOrReuseBillboard(model, folderName)
 		return
 	end
 
-	-- Límite de instancias por tipo
+	-- Límite de instancias por tipo (no crear si ya excedimos)
 	if folderName == "Teachers" and Cache.Counts.Teachers >= MAX.Teachers then return end
 	if folderName == "Alices" and Cache.Counts.Alices >= MAX.Alices then return end
 
@@ -148,7 +172,7 @@ local function createOrReuseBillboard(model, folderName)
 	img.ScaleType = Enum.ScaleType.Fit
 	img.Parent = bb
 
-	-- Guardar en caché
+	-- Guardar en caché (observa que guardamos folderName)
 	Cache.Billboards[model] = { gui = bb, folder = folderName, headRef = head }
 
 	if folderName == "Teachers" then
@@ -171,20 +195,22 @@ local function createOrReuseBillboard(model, folderName)
 	end)
 end
 
-local function destroyBillboard(model)
+local function maybeDestroyBillboardIfModelGone(model)
+	-- Solo destruir si el modelo ya NO está en su carpeta original (Teacher/Alice)
 	local data = Cache.Billboards[model]
 	if not data then return end
-	if data.gui and data.gui.Parent then
-		data.gui:Destroy()
+	if not isModelInFolder(model, data.folder) then
+		destroyBillboardStrict(model)
 	end
+end
 
-	if data.folder == "Teachers" then
-		Cache.Counts.Teachers = math.max(0, Cache.Counts.Teachers - 1)
-	elseif data.folder == "Alices" then
-		Cache.Counts.Alices = math.max(0, Cache.Counts.Alices - 1)
+-- Destruir todos billboards de un folder (por ejemplo si la carpeta quedó vacía)
+local function destroyAllFromFolder(folderName)
+	for model, data in pairs(Cache.Billboards) do
+		if data and data.folder == folderName then
+			destroyBillboardStrict(model)
+		end
 	end
-
-	Cache.Billboards[model] = nil
 end
 
 ------------------------------------------------------
@@ -201,6 +227,7 @@ end
 
 local function shouldLocalSeeModel(localFolder, targetFolder, model)
 	if not localFolder or not targetFolder or not model then return false end
+	-- no mostrar billboards del propio jugador
 	if model.Name == LocalPlayer.Name then return false end
 
 	if localFolder == "Students" then
@@ -220,13 +247,19 @@ local function updateVisibility(model)
 	local data = Cache.Billboards[model]
 	if not data or not data.gui then return end
 
+	-- Si el modelo ya no está en su carpeta: destruir (es eliminación real)
+	if not isModelInFolder(model, data.folder) then
+		destroyBillboardStrict(model)
+		return
+	end
+
 	-- Reforzar referencia a la cabeza (si se perdió)
 	local head = data.headRef
 	if not (head and head.Parent) then
 		head = getRealHead(model)
 		if not head then
 			-- si no existe cabeza válida, destruir billboard
-			return destroyBillboard(model)
+			return maybeDestroyBillboardIfModelGone(model)
 		end
 		data.headRef = head
 		data.gui.Adornee = head
@@ -262,7 +295,7 @@ local function hookModelSignals(model, folderName)
 
 	-- TeacherName cambió -> recrear/actualizar imagen
 	model:GetAttributeChangedSignal("TeacherName"):Connect(function()
-		-- intenta recrear o actualizar la imagen
+		-- intenta recrear o actualizar la imagen (reuso)
 		createOrReuseBillboard(model, folderName)
 		local data = Cache.Billboards[model]
 		if data and data.gui then
@@ -285,10 +318,11 @@ local function hookModelSignals(model, folderName)
 
 	-- Si la jerarquía cambia (se reparenta o se elimina) -> gestionar billboard
 	model.AncestryChanged:Connect(function(_, parent)
+		-- si el modelo dejó de existir, destruir estrictamente
 		if not parent then
-			destroyBillboard(model)
+			destroyBillboardStrict(model)
 		else
-			-- re-check asincrónico
+			-- si se reparenta dentro del juego, aseguramos reuso/adornee
 			task.defer(function()
 				createOrReuseBillboard(model, folderName)
 				updateVisibility(model)
@@ -309,16 +343,30 @@ local function scanAndApply(localFolder)
 		if not folder then
 			-- siguiente folder si falta
 		else
-			for _, child in ipairs(folder:GetChildren()) do
+			local children = folder:GetChildren()
+			-- Si la carpeta está vacía -> eliminar todos billboards asociados a este folder
+			if #children == 0 then
+				destroyAllFromFolder(folderName)
+			end
+
+			for _, child in ipairs(children) do
 				if not child or not child:IsA("Model") then
 					-- skip
 				else
+					-- NO destruir por el simple hecho de que el jugador local cambió o murió.
+					-- Solo destruir si el modelo ya no está en su carpeta (se chequea dentro de updateVisibility / AncestryChanged).
 					if not shouldLocalSeeModel(localFolder, folderName, child) then
-						destroyBillboard(child)
+						-- Si el local no debe ver este modelo, solo no lo creamos/activamos.
+						-- No lo destruimos aquí (evita borrar por muerte del jugador local).
+						-- Simplemente aseguramos que no haya billboard creado/activo para este cliente.
+						local existing = Cache.Billboards[child]
+						if existing and existing.gui then
+							existing.gui.Enabled = false
+						end
 					else
-						-- respetar límites por tipo
+						-- respetar límites por tipo al crear/activar
 						if folderName == "Teachers" and teachersSeen >= MAX.Teachers then
-							-- skip
+							-- skip activar/crear más
 						elseif folderName == "Alices" and alicesSeen >= MAX.Alices then
 							-- skip
 						else
@@ -347,30 +395,87 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 			if not child or not child:IsA("Model") then return end
 			-- detectar folder del local en el momento de la adición
 			local localFolder = detectLocalFolder()
-			if shouldLocalSeeModel(localFolder, folderName, child) then
-				task.defer(function()
-					createOrReuseBillboard(child, folderName)
-					hookModelSignals(child, folderName)
-					updateVisibility(child)
-				end)
-			end
+			-- crear billboard siempre (se elegirá si activarlo o no según shouldLocalSeeModel y MAX)
+			task.defer(function()
+				createOrReuseBillboard(child, folderName)
+				hookModelSignals(child, folderName)
+				-- notamos: updateVisibility decidirá si mostrarlo
+				updateVisibility(child)
+			end)
 		end)
 
 		folder.ChildRemoved:Connect(function(child)
-			-- si se elimina el modelo de la jerarquía, asegúrate de destruir su billboard
-			destroyBillboard(child)
+			-- si se elimina el modelo de la jerarquía, asegurar que se destruya
+			destroyBillboardStrict(child)
+			-- si la carpeta quedó vacía, limpiar todos billboards del folder
+			if #folder:GetChildren() == 0 then
+				destroyAllFromFolder(folderName)
+			end
 		end)
 	end
 end
 
 ------------------------------------------------------
--- 🧍 Control del jugador local
+-- 🧍 Control del jugador local (respawn + movimiento)
 ------------------------------------------------------
 local function onCharacterAdded(character)
 	-- esperar un poco para que todo replique
 	task.wait(0.5)
-	scanAndApply(detectLocalFolder())
+	local localFolder = detectLocalFolder()
+
+	-- Re-scan pero sin destruir por muerte del jugador local
+	scanAndApply(localFolder)
 	updateAllVisibility()
+
+	-- 🔥 FIX: Reasignar Adornee y reactivar billboards que este cliente debe ver (respetando MAX y distancia)
+	task.defer(function()
+		local visibleCounts = { Teachers = 0, Alices = 0 }
+		for model, data in pairs(Cache.Billboards) do
+			if data and data.gui then
+				-- reasignar head/adornee si es posible
+				local head = getRealHead(model)
+				if head then
+					data.gui.Adornee = head
+					data.headRef = head
+				end
+
+				-- decidir si este cliente debe ver este modelo ahora
+				local shouldSee = shouldLocalSeeModel(localFolder, data.folder, model)
+				if shouldSee and data.headRef then
+					local dist = getDistanceFromLocal(data.headRef)
+					-- respetar distancia y límites MAX
+					if dist <= MAX_RENDER_DISTANCE then
+						if data.folder == "Teachers" then
+							if visibleCounts.Teachers < MAX.Teachers then
+								data.gui.Enabled = true
+								visibleCounts.Teachers = visibleCounts.Teachers + 1
+							else
+								data.gui.Enabled = false
+							end
+						elseif data.folder == "Alices" then
+							if visibleCounts.Alices < MAX.Alices then
+								data.gui.Enabled = true
+								visibleCounts.Alices = visibleCounts.Alices + 1
+							else
+								data.gui.Enabled = false
+							end
+						else
+							-- fallback
+							data.gui.Enabled = dist <= MAX_RENDER_DISTANCE
+						end
+					else
+						data.gui.Enabled = false
+					end
+				else
+					-- no corresponde ver este modelo con el folder actual del jugador
+					data.gui.Enabled = false
+				end
+			end
+		end
+
+		-- ajuste final por si hace falta
+		updateAllVisibility()
+	end)
 
 	local root = character:WaitForChild("HumanoidRootPart", 3)
 	if not root then return end
@@ -386,18 +491,25 @@ local function onCharacterAdded(character)
 			updateAllVisibility()
 
 			-- Resync forzado: reactivar billboards que ya deberían estar visibles
+			local localFolderNow = detectLocalFolder()
 			for model, data in pairs(Cache.Billboards) do
 				if data and data.headRef and data.gui then
 					local d = getDistanceFromLocal(data.headRef)
 					if d <= MAX_RENDER_DISTANCE then
-						data.gui.Enabled = true
+						if shouldLocalSeeModel(localFolderNow, data.folder, model) then
+							data.gui.Enabled = true
+						else
+							data.gui.Enabled = false
+						end
+					else
+						data.gui.Enabled = false
 					end
 				end
 			end
 		end
 	end)
 
-	-- si el character se reparenta (ej. respawn), re-scan y actualizar
+	-- si el character se reparenta (ej. respawn), re-scan y actualizar (sin destruir)
 	character:GetPropertyChangedSignal("Parent"):Connect(function()
 		task.defer(function()
 			scanAndApply(detectLocalFolder())
