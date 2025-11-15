@@ -23,14 +23,16 @@ local UPDATE_THRESHOLD = 5
 ------------------------------------------------------------
 local systemActive = false
 local activeBillboards = {}
+local creationQueue = {}  -- ✔ NUEVO
+local creating = false    -- ✔ NUEVO
 local visibleStudents = {}
 local cleanupTimer = nil
 
 ------------------------------------------------------------
 -- 📦 Cache persistente
 ------------------------------------------------------------
-local billboardCache = Workspace:FindFirstChild("BillboardStudrnts_Cache") or Instance.new("Folder")
-billboardCache.Name = "BillboardStudrnts_Cache"
+local billboardCache = Workspace:FindFirstChild("BillboardStudents_Cache") or Instance.new("Folder")
+billboardCache.Name = "BillboardStudents_Cache"
 billboardCache.Parent = Workspace
 
 ------------------------------------------------------------
@@ -83,7 +85,7 @@ local function getOrCreateBillboard(character)
 	local image = Instance.new("ImageLabel")
 	image.BackgroundTransparency = 1
 	image.Size = UDim2.new(1, 0, 1, 0)
-	image.Image = "rbxassetid://126500139798475" -- ID de la imagen del estudiante
+	image.Image = "rbxassetid://126500139798475"
 	image.ScaleType = Enum.ScaleType.Fit
 	image.Parent = billboard
 
@@ -99,6 +101,31 @@ local function updateBillboardState(character, state)
 	if billboard then
 		ensureAdornee(character, billboard)
 		billboard.Enabled = state
+	end
+end
+
+------------------------------------------------------------
+-- ✔ SISTEMA DE COLA (1 creación por segundo)
+------------------------------------------------------------
+local function queueBillboardCreation(character)
+	if activeBillboards[character] then return end
+	if creationQueue[character] then return end
+
+	creationQueue[character] = true
+
+	if not creating then
+		creating = true
+		task.spawn(function()
+			while next(creationQueue) ~= nil do
+				for student in pairs(creationQueue) do
+					creationQueue[student] = nil
+					getOrCreateBillboard(student)
+					break
+				end
+				task.wait(1)
+			end
+			creating = false
+		end)
 	end
 end
 
@@ -160,7 +187,7 @@ local function updateVisibleStudents()
 end
 
 ------------------------------------------------------------
--- 🧹 Limpieza programada (cuando se desactiva el sistema)
+-- 🧹 Limpieza programada
 ------------------------------------------------------------
 local function scheduleBillboardCleanup()
 	if cleanupTimer then return end
@@ -205,13 +232,12 @@ local function updateSystemStatus(force)
 end
 
 ------------------------------------------------------------
--- 🧍‍♂️ Eventos Students (mejorado con verificación de Head/BasePart)
+-- 🧍‍♂️ Eventos Students
 ------------------------------------------------------------
 studentsFolder.ChildAdded:Connect(function(child)
 	if not systemActive then return end
 	if not child:IsA("Model") or child == localPlayer.Character then return end
 
-	-- 🕓 Esperar a que el modelo tenga Head o BasePart (máx 5 segundos)
 	task.spawn(function()
 		local head = child:FindFirstChild("Head") or child:FindFirstChildWhichIsA("BasePart")
 		local tries = 0
@@ -222,9 +248,10 @@ studentsFolder.ChildAdded:Connect(function(child)
 		end
 
 		if head then
-			local billboard = getOrCreateBillboard(child)
+			queueBillboardCreation(child)
+			local billboard = activeBillboards[child]
+
 			if billboard then
-				-- ⚡ Si el jugador entra cerca, forzar visibilidad inmediata
 				local localChar = localPlayer.Character
 				if localChar then
 					local localPos = getModelPosition(localChar)
@@ -237,9 +264,10 @@ studentsFolder.ChildAdded:Connect(function(child)
 					end
 				end
 			end
+
 			task.defer(updateVisibleStudents)
 		else
-			warn("[BillboardESP] No se encontró Head/BasePart en el modelo de " .. child.Name)
+			warn("[BillboardESP] No se encontró Head/BasePart en " .. child.Name)
 		end
 	end)
 end)
@@ -338,22 +366,23 @@ Workspace.DescendantRemoving:Connect(function(obj)
 end)
 
 ------------------------------------------------------------
--- 🔁 Auto-verificador (detecta billboards huérfanos)
+-- 🔁 Auto-verificador (corregido)
 ------------------------------------------------------------
 task.spawn(function()
 	while task.wait(5) do
 		if not systemActive then continue end
+
 		local missing = false
+
 		for _, student in ipairs(studentsFolder:GetChildren()) do
 			if student:IsA("Model") and student ~= localPlayer.Character then
 				if not activeBillboards[student] then
 					missing = true
-					break
+					queueBillboardCreation(student)
 				end
 			end
 		end
 
-		-- 🔥 Limpieza de billboards huérfanos
 		for student, bb in pairs(activeBillboards) do
 			if not student or not student.Parent then
 				if bb then bb:Destroy() end
@@ -369,11 +398,11 @@ task.spawn(function()
 end)
 
 ------------------------------------------------------------
--- 🚀 Inicialización
+-- 🚀 Inicialización (corregida)
 ------------------------------------------------------------
 for _, student in ipairs(studentsFolder:GetChildren()) do
 	if student:IsA("Model") and student ~= localPlayer.Character then
-		getOrCreateBillboard(student)
+		queueBillboardCreation(student)
 	end
 end
 
