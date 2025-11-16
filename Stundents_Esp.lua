@@ -190,7 +190,7 @@ end
 ------------------------------------------------------------
 local function scheduleBillboardCleanup()
 	if cleanupTimer then return end
-	cleanupTimer = task.delay(50, function()
+	cleanupTimer = task.delay(28, function()
 		if systemActive then cleanupTimer = nil return end
 
 		for student, bb in pairs(activeBillboards) do
