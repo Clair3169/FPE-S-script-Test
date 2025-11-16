@@ -1,3 +1,6 @@
+-- StudentsnFolder BilboardGui
+repeat task.wait() until game:IsLoaded()
+
 ------------------------------------------------------------
 -- ⚙️ Servicios
 ------------------------------------------------------------
