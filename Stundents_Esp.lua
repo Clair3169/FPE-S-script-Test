@@ -361,7 +361,7 @@ end)
 -- 🔁 Auto-verificador (corregido)
 ------------------------------------------------------------
 task.spawn(function()
-	while task.wait(5) do
+	while task.wait(0.8) do
 		if not systemActive then continue end
 
 		local missing = false
