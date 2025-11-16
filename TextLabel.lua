@@ -49,21 +49,27 @@ players.PlayerRemoving:Connect(updatePlayerCount)
 updatePlayerCount()
 
 -- ============================================================
--- 🔹 Diálogos estáticos (encima del contador, bien pegados)
+-- 🔹 Diálogos estáticos (Altura 20, Separación 1)
 -- ============================================================
 
 local dialogueConfig = {
-	{text = "", color = Color3.fromRGB(255, 255, 0)},
+	{text = "", color = Color3.fromRGB(255, 0, 0)},
 	{text = "", color = Color3.fromRGB(0, 255, 255)},
 	-- {text = "Otro más", color = Color3.fromRGB(255, 0, 255)},
 }
 
+-- La altura de CADA label es 20 (fijada en createLabel)
+local labelHeight = 10
+-- La separación que quieres
+local spacing = 1
+
 -- Base justo encima del contador
 local baseY = -15 -- justo encima de “Jugadores”
-local offset = 18 + 1 -- altura del texto + 1 píxel de separación mínima
+local offset = labelHeight + spacing -- (20 + 1 = 21)
 
 -- Crear cada diálogo, apilándolos hacia arriba
 for i, config in ipairs(dialogueConfig) do
 	local posY = baseY - ((i - 1) * offset)
+	-- OJO: No necesitas modificar createLabel si todos miden 20
 	createLabel(config.text, config.color, UDim2.new(0, 2, 1, posY))
 end
