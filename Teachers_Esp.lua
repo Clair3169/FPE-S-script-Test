@@ -20,7 +20,7 @@ local MAX = { Teachers = 4, Alices = 2 }
 local MAX_RENDER_DISTANCE = 250
 local BILLBOARD_SIZE = UDim2.new(0, 45, 0, 45)
 local STUDS_OFFSET = Vector3.new(0, 1.6, 0)
-local UPDATE_THRESHOLD = 5
+local UPDATE_THRESHOLD = 5 -- <-- Restaurado
 
 ------------------------------------------------------
 -- 🖼️ IDs de imágenes
@@ -84,6 +84,7 @@ local function getRealHead(model)
 	return head
 end
 
+-- --- 🔥 SOLUCIÓN 1: Restaurar la función de distancia ---
 local function getDistanceFromLocal(head)
 	local char = LocalPlayer.Character
 	local myHead = char and char:FindFirstChild("Head")
@@ -167,7 +168,13 @@ local function createOrReuseBillboard(model, folderName)
 	bb.Size = BILLBOARD_SIZE
 	bb.StudsOffset = STUDS_OFFSET
 	bb.AlwaysOnTop = true
-	bb.MaxDistance = MAX_RENDER_DISTANCE
+	-- IMPORTANTE: Seguimos usando MaxDistance.
+	-- Nuestro script manual 'Enabled' es una *adición* a esto, no un reemplazo.
+	-- El script decide si DEBERÍAS verlo (equipo),
+	-- y MaxDistance decide si PUEDES verlo (distancia).
+	-- ... O podemos hacer el chequeo de distancia manualmente.
+	-- Restauraremos tu lógica manual al 100%.
+	bb.MaxDistance = math.huge -- Ponemos Infinito, para que *nuestro* script controle la distancia.
 	bb.Adornee = head
 	bb.Parent = BillboardCacheFolder
 	bb.Enabled = false -- empezar disabled y activarlo tras asegurar parent/adorn
@@ -198,7 +205,9 @@ local function createOrReuseBillboard(model, folderName)
 				bb.Adornee = finalHead
 				Cache.Billboards[model].headRef = finalHead
 			end
-			bb.Enabled = true
+			-- Ya no lo habilitamos aquí, dejamos que updateVisibility lo haga
+			-- bb.Enabled = true 
+			updateVisibility(model) -- <-- Llamar a la lógica de visibilidad de inmediato
 		end
 	end)
 end
@@ -264,18 +273,12 @@ local function updateVisibility(model)
 	-- Reforzar referencia a la cabeza (si se perdió)
 	local head = data.headRef
 	
-	-- 🔥 ESTA ES LA "SEGURIDAD" CLAVE 🔥
-	-- Si la 'headRef' que teníamos guardada ya no existe (está destruida/fantasma),
-	-- 'head.Parent' será nil, y este 'if' se activará.
 	if not (head and head.Parent) then
 		head = getRealHead(model) -- Intenta buscar la *nueva* cabeza
 		if not head then
-			-- si no existe cabeza válida AHORA, no podemos hacer nada.
-			-- Deshabilitar por si acaso y salir.
 			data.gui.Enabled = false
 			return
 		end
-		-- ¡Éxito! Encontramos la nueva cabeza. La guardamos.
 		data.headRef = head
 		data.gui.Adornee = head
 	end
@@ -290,6 +293,7 @@ local function updateVisibility(model)
 		return
 	end
 
+	-- --- 🔥 SOLUCIÓN 2: Restaurar el chequeo de distancia manual ---
 	-- 2. Si puede verlo, chequear distancia
 	local dist = getDistanceFromLocal(head) -- 'head' ahora es VÁLIDA
 	local shouldShow = dist <= MAX_RENDER_DISTANCE
@@ -362,6 +366,50 @@ local function hookModelSignals(model, folderName)
 			end)
 		end
 	end)
+	
+	-- --- 🔥 SOLUCIÓN 3: Enganchar el movimiento del *enemigo* ---
+	task.spawn(function()
+		local head = getRealHead(model)
+		-- Intentar encontrar la cabeza varias veces si no está lista
+		if not head then
+			for i = 1, 10 do
+				task.wait(0.2)
+				head = getRealHead(model)
+				if head then break end
+			end
+		end
+
+		if not head then
+			-- Si no se encuentra cabeza, no podemos escuchar su movimiento
+			return 
+		end
+
+		-- Guardar la última posición conocida de *este* enemigo
+		local lastEnemyPos = head.Position
+		
+		-- Escuchar cambios en la posición de la cabeza del enemigo
+		head:GetPropertyChangedSignal("Position"):Connect(function()
+			if not head.Parent then return end -- Cabeza destruida, no hacer nada
+
+			local newEnemyPos = head.Position
+			if not newEnemyPos or not lastEnemyPos then 
+				-- Posición inválida o no hay pos anterior,
+				-- actualizar por si acaso y guardar
+				lastEnemyPos = newEnemyPos 
+				updateVisibility(model)
+				return
+			end
+
+			-- Solo actualizar la visibilidad de ESTE billboard si se movió lo suficiente
+			if (newEnemyPos - lastEnemyPos).Magnitude > UPDATE_THRESHOLD then
+				lastEnemyPos = newEnemyPos
+				
+				-- ¡Importante! No llamar a updateAll, solo al del modelo específico
+				updateVisibility(model)
+			end
+		end)
+	end)
+	-- --- FIN DE LA SOLUCIÓN 3 ---
 end
 
 ------------------------------------------------------
@@ -479,6 +527,7 @@ local function onCharacterAdded(character)
 
 	local lastPos = root.Position
 	
+	-- --- 🔥 SOLUCIÓN 4: Restaurar el evento de movimiento del JUGADOR LOCAL ---
 	-- Evento de movimiento (ya optimizado)
 	root:GetPropertyChangedSignal("Position"):Connect(function()
 		local newPos = root.Position
@@ -486,9 +535,11 @@ local function onCharacterAdded(character)
 		
 		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
 			lastPos = newPos
+			-- Cuando el JUGADOR se mueve, actualizar TODOS
 			updateAllVisibility()
 		end
 	end)
+	-- --- FIN DE LA SOLUCIÓN 4 ---
 
 	-- si el character se reparenta (ej. respawn), re-scan y actualizar
 	character:GetPropertyChangedSignal("Parent"):Connect(function()
