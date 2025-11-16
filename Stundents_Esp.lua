@@ -1,6 +1,3 @@
--- 🧿 Student Billboard ESP (Optimizado con Cache, Limpieza y Seguridad de Spawn)
-repeat task.wait() until game:IsLoaded()
-
 ------------------------------------------------------------
 -- ⚙️ Servicios
 ------------------------------------------------------------
@@ -23,8 +20,8 @@ local UPDATE_THRESHOLD = 5
 ------------------------------------------------------------
 local systemActive = false
 local activeBillboards = {}
-local creationQueue = {}  -- ✔ NUEVO
-local creating = false    -- ✔ NUEVO
+local creationQueue = {}
+local creating = false
 local visibleStudents = {}
 local cleanupTimer = nil
 
@@ -122,7 +119,7 @@ local function queueBillboardCreation(character)
 					getOrCreateBillboard(student)
 					break
 				end
-				task.wait(1)
+				task.wait(0.8)
 			end
 			creating = false
 		end)
@@ -182,7 +179,6 @@ local function updateVisibleStudents()
 			updateBillboardState(student, true)
 		end
 	end
-
 	visibleStudents = newVisible
 end
 
@@ -205,7 +201,6 @@ local function scheduleBillboardCleanup()
 				obj:Destroy()
 			end
 		end
-
 		cleanupTimer = nil
 	end)
 end
@@ -235,49 +230,21 @@ end
 -- 🧍‍♂️ Eventos Students
 ------------------------------------------------------------
 studentsFolder.ChildAdded:Connect(function(child)
-    -- ... (esta función se queda igual que la tuya) ...
+		
 end)
 
--- VVV ESTA ES LA FUNCIÓN QUE DEBES REEMPLAZAR VVV --
 studentsFolder.ChildRemoved:Connect(function(child)
 	local bb = activeBillboards[child]
 	if bb then
-		-- Solo lo desactivamos y quitamos su Adornee.
-		-- El BillboardGUI permanecerá en la carpeta 'billboardCache'.
+			
 		bb.Enabled = false
 		bb.Adornee = nil 
 	end
-
-	-- Lo quitamos de las tablas de seguimiento activo.
+		
 	activeBillboards[child] = nil
 	visibleStudents[child] = nil
-
-	-- ❗ NO destruimos el BillboardGUI del cache.
-	-- Al eliminar las líneas que lo destruían, la función
-	-- 'getOrCreateBillboard' lo encontrará y reutilizará 
-	-- la próxima vez que el 'child' sea añadido (al reaparecer).
-
-	-- local cached = billboardCache:FindFirstChild(child.Name .. "_BB_Student")
-	-- if cached and cached:IsA("BillboardGui") then
-	-- 	cached:Destroy() -- <--- ESTAS LÍNEAS SE ELIMINAN O COMENTAN
-	-- end
 end)
--- ^^^ ESTA ES LA FUNCIÓN QUE DEBES REEMPLAZAR ^^^ --
 
-studentsFolder.ChildRemoved:Connect(function(child)
-	local bb = activeBillboards[child]
-	if bb then
-		bb.Enabled = false
-		bb.Adornee = nil
-	end
-	activeBillboards[child] = nil
-	visibleStudents[child] = nil
-
-	local cached = billboardCache:FindFirstChild(child.Name .. "_BB_Student")
-	if cached and cached:IsA("BillboardGui") then
-		cached:Destroy()
-	end
-end)
 
 ------------------------------------------------------------
 -- 🧹 Limpieza si un jugador abandona
@@ -343,22 +310,7 @@ localPlayer.CharacterRemoving:Connect(function()
 end)
 
 ------------------------------------------------------------
--- ♻️ Limpieza global
-------------------------------------------------------------
-Workspace.DescendantRemoving:Connect(function(obj)
-	if activeBillboards[obj] then
-		local bb = activeBillboards[obj]
-		if bb then
-			bb.Enabled = false
-			bb.Adornee = nil
-		end
-		activeBillboards[obj] = nil
-		visibleStudents[obj] = nil
-	end
-end)
-
-------------------------------------------------------------
--- 🔁 Auto-verificador (corregido)
+-- 🔁 Auto-verificador
 ------------------------------------------------------------
 task.spawn(function()
 	while task.wait(0.8) do
