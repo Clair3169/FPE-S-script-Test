@@ -431,7 +431,15 @@ for _, folderName in ipairs({"Alices", "Teachers"}) do
 
 			-- detectar folder del local en el momento de la adición
 			local localFolder = detectLocalFolder()
-			-- crear billboard siempre (se elegirá si activarlo o no según shouldLocalSeeModel y MAX)
+
+            -- V V V LÍNEA DE OPTIMIZACIÓN V V V
+			-- Si NO deberíamos ver este modelo (es compañero), no crear nada.
+			if not shouldLocalSeeModel(localFolder, folderName, child) then
+				return 
+			end
+            -- V V V FIN DE LA OPTIMIZACIÓN V V V
+
+			-- (El código de abajo ahora solo se ejecuta para enemigos)
 			task.defer(function()
 				createOrReuseBillboard(child, folderName)
 				hookModelSignals(child, folderName)
