@@ -1,4 +1,4 @@
--- 🟦 Book BillboardGui Robusto (versión final funcional)
+-- 🟦 Book BillboardGui Robusto (versión optimizada)
 repeat task.wait() until game:IsLoaded()
 
 ------------------------------------------------------------
@@ -14,16 +14,17 @@ if not player then return end
 -- ⚙️ Configuración
 ------------------------------------------------------------
 local IMAGE_ID = "rbxassetid://17537434140"
-local RENDER_DISTANCE = 180
+local RENDER_DISTANCE = 150
 local UPDATE_THRESHOLD = 5
 local CLEANUP_DELAY = 50
-local AUTOVERIFIER_INTERVAL = 5
+local AUTOVERIFIER_INTERVAL = 12
 
 ------------------------------------------------------------
 -- 🧠 Estado
 ------------------------------------------------------------
 local asleep = false
 local billboards = {}
+local visibilityState = {}
 local billboardsFolder = Workspace:FindFirstChild("BillboardGuiBooks_Cache")
 if not billboardsFolder then
 	billboardsFolder = Instance.new("Folder")
@@ -44,7 +45,6 @@ local function getLocalPos()
 	return root and root.Position or nil
 end
 
--- Retorna BasePart válido de un libro (soporta Model o BasePart)
 local function getTargetPart(book)
 	if not book then return nil end
 	if book:IsA("BasePart") then return book end
@@ -64,6 +64,7 @@ local function removeBillboard(part)
 	if bb then
 		if bb.Parent then bb:Destroy() end
 		billboards[part] = nil
+		visibilityState[part] = nil
 	end
 end
 
@@ -72,33 +73,35 @@ end
 ------------------------------------------------------------
 local function createBillboard(target)
 	if asleep or not target or not target:IsA("BasePart") then return end
-
-	-- Evitar duplicados
 	if billboards[target] then
 		if billboards[target].Parent then
 			billboards[target]:Destroy()
 		end
 		billboards[target] = nil
 	end
-
-	-- Esperar que esté en Workspace
 	if not target:IsDescendantOf(Workspace) then
 		task.wait(0.1)
 	end
 
-	-- Crear BillboardGui
 	local bb = Instance.new("BillboardGui")
 	bb.Name = "Book_Billboard_" .. target.Name
 	bb.AlwaysOnTop = true
 	bb.Size = UDim2.new(2.5, 0, 2.5, 0)
 	bb.MaxDistance = RENDER_DISTANCE
-	bb.StudsOffset = Vector3.new(0, target.Size.Y + 1, 0)
 	bb.LightInfluence = 0
-	bb.Enabled = true
+	bb.Enabled = false
 	bb.Adornee = target
 	bb.Parent = billboardsFolder
 
-	-- Imagen
+	local offsetY = 3
+	if target:IsA("BasePart") then
+		offsetY = target.Size.Y + 2
+	elseif target:IsA("Model") then
+		local _, size = target:GetBoundingBox()
+		offsetY = size.Y + 2
+	end
+	bb.StudsOffset = Vector3.new(0, offsetY, 0)
+
 	local img = Instance.new("ImageLabel")
 	img.Name = "BookImage"
 	img.BackgroundTransparency = 1
@@ -114,7 +117,7 @@ end
 ------------------------------------------------------------
 -- 🔁 Actualizar visibilidad según distancia
 ------------------------------------------------------------
-local function updateBillboardsInRange()
+local function updateBillboardsInRange(force)
 	local localPos = getLocalPos()
 	if asleep or not localPos then return end
 
@@ -124,7 +127,8 @@ local function updateBillboardsInRange()
 		else
 			local dist = (part.Position - localPos).Magnitude
 			local visible = dist <= RENDER_DISTANCE
-			if bb.Enabled ~= visible then
+			if force or visibilityState[part] ~= visible then
+				visibilityState[part] = visible
 				bb.Enabled = visible
 			end
 		end
@@ -136,14 +140,13 @@ end
 ------------------------------------------------------------
 local function activateBooks()
 	if asleep or not booksFolder then return end
-
 	for _, obj in ipairs(booksFolder:GetChildren()) do
 		local target = getTargetPart(obj)
 		if target then
 			createBillboard(target)
 		end
 	end
-	updateBillboardsInRange()
+	updateBillboardsInRange(true)
 end
 
 ------------------------------------------------------------
@@ -158,7 +161,7 @@ local function connectBookEvents()
 		local target = getTargetPart(child)
 		if target then
 			createBillboard(target)
-			updateBillboardsInRange()
+			updateBillboardsInRange(true)
 		end
 	end)
 
@@ -181,6 +184,7 @@ local function scheduleCleanup()
 		for part, bb in pairs(billboards) do
 			if bb and bb.Parent then bb:Destroy() end
 			billboards[part] = nil
+			visibilityState[part] = nil
 		end
 		cleanupTimer = nil
 	end)
@@ -195,9 +199,7 @@ local function checkSleepState()
 	if newAsleep ~= asleep then
 		asleep = newAsleep
 		if asleep then
-			for _, bb in pairs(billboards) do
-				bb.Enabled = false
-			end
+			for _, bb in pairs(billboards) do bb.Enabled = false end
 			scheduleCleanup()
 		else
 			task.defer(function()
@@ -218,15 +220,14 @@ Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Books" and child:IsA("Folder") then
 		booksFolder = child
 		connectBookEvents()
-		task.wait(0.1); activateBooks()	
+		task.wait(0.1)
+		activateBooks()
 	end
 end)
 
 Workspace.ChildRemoved:Connect(function(child)
 	if child == booksFolder then
-		for part in pairs(billboards) do
-			removeBillboard(part)
-		end
+		for part in pairs(billboards) do removeBillboard(part) end
 		booksFolder = nil
 	end
 end)
@@ -281,9 +282,7 @@ task.spawn(function()
 			end
 		end
 
-		if missing then
-			updateBillboardsInRange()
-		end
+		if missing then updateBillboardsInRange(true) end
 	end
 end)
 
@@ -295,8 +294,8 @@ local function initializeBookSystem()
 	booksFolder = booksFolder or Workspace:FindFirstChild("Books")
 	if booksFolder then connectBookEvents() end
 	if booksFolder and not asleep then
-    task.wait(0.1)
-    activateBooks()
+		task.wait(0.1)
+		activateBooks()
 	end
 end
 
