@@ -13,6 +13,7 @@ screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
+-- Label 1: El contador principal
 local label = screenGui:FindFirstChild("TimerLabel") or Instance.new("TextLabel")
 label.Name = "TimerLabel"
 label.Size = UDim2.new(0, 90, 0, 28)
@@ -24,6 +25,20 @@ label.Font = Enum.Font.GothamBold
 label.Text = "0:00"
 label.Visible = true
 label.Parent = screenGui
+
+-- Label 2: Animación de pausa
+local pausedLabel = screenGui:FindFirstChild("PausedLabel") or Instance.new("TextLabel")
+pausedLabel.Name = "PausedLabel"
+pausedLabel.Size = UDim2.new(0, 90, 0, 28)
+pausedLabel.Position = UDim2.new(0.5, -45, 0, -3)
+pausedLabel.BackgroundTransparency = 1
+pausedLabel.TextColor3 = Color3.fromRGB(255, 80, 80) -- Color rojo para la pausa
+pausedLabel.TextScaled = true
+pausedLabel.Font = Enum.Font.GothamBold
+pausedLabel.Text = "||"
+pausedLabel.Visible = false
+pausedLabel.Parent = screenGui
+
 
 -- 🟦 Sonidos
 local phaseSongs = SoundService:WaitForChild("AllMusic"):WaitForChild("PhaseSongs")
@@ -44,17 +59,19 @@ local soundDurations = {
 
 -- 🟦 Variables
 local currentSound = nil
-local hbConn = nil
-local blinkingConn = nil
-local pausedAnimConn = nil
+local hbConn = nil -- Conexión Heartbeat para el contador principal (label)
+local blinkingConn = nil -- Conexión Heartbeat para el parpadeo de urgencia
+local pausedAnimConn = nil -- Conexión Heartbeat para la animación de pausa (pausedLabel)
 local lastTP = 0
+local isTimerRunning = false -- ¡NUEVO! Guarda de estado
 local isPausedAnimating = false
+local frozenTimeText = "0:00"
 
-local symbols = {"∆∆∆∆","!¡?¿","!¡!!!¿!!","??¡???!??","∆∆∆∆∆∆∆∆∆∆∆","XD"}
+local symbols = {"∆∆∆∆", "!!¡!!¡¿!", "¡!#¡!!¡¡¡", "?¿!¡?", "¿?!¿¡?", "XDD"}
 
 -- 🟦 Helpers
 local function format(sec)
-	return string.format("%d:%02d", sec//60, sec%60)
+	return string.format("%d:%02d", math.floor(sec/60), math.floor(sec%60))
 end
 
 local function isExcluded()
@@ -69,22 +86,27 @@ local function stopBlink()
 	blinkingConn = nil
 end
 
+-- Detiene la animación de pausa y oculta el label de pausa
 local function stopPausedAnim()
 	if pausedAnimConn then
 		pausedAnimConn:Disconnect()
 	end
 	pausedAnimConn = nil
 	isPausedAnimating = false
+	pausedLabel.Visible = false
 end
 
+-- Detiene TODOS los bucles/conexiones
 local function stopTimer()
 	if hbConn then hbConn:Disconnect() end
 	hbConn = nil
 	currentSound = nil
+	isTimerRunning = false
 	stopBlink()
 	stopPausedAnim()
 end
 
+-- Inicia el parpadeo de urgencia (para el label principal)
 local function beginBlink()
 	stopBlink()
 	blinkingConn = RunService.Heartbeat:Connect(function()
@@ -92,81 +114,69 @@ local function beginBlink()
 	end)
 end
 
--- 🟦 pausedAnim (mostrará tiempo en rojo mientras está pausado; no bloquea reanudación)
-local function pausedAnim()
-	if not currentSound then return end
+-- 🟦 Lógica de Animación de Pausa (para pausedLabel)
+local function pausedAnim(frozenTime)
 	if isPausedAnimating then return end
 	isPausedAnimating = true
+	isTimerRunning = false
 
+	pausedLabel.Visible = true
+	pausedLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	
 	stopBlink()
-	stopPausedAnim() -- asegura limpiar antes de crear nueva
-	label.TextColor3 = Color3.fromRGB(255,0,0)
 
-	local dur = soundDurations[currentSound]
-	local i = 0
+	local animStartTime = tick()
+	local animDuration = 1.0
+	local symbolInterval = 0.15
 
 	pausedAnimConn = RunService.Heartbeat:Connect(function(dt)
-		-- Si currentSound desaparece, cortar
-		if not currentSound then
-			stopPausedAnim()
-			return
+		-- ¡NUEVA COMPROBACIÓN!
+		-- Si el bucle de pausa detecta que la música se reanudó,
+		-- fuerza el estado de "Play" y se autodestruye.
+		if currentSound and currentSound.IsPlaying then
+			_G.onPlay(currentSound) -- Llama a la función global (ver abajo)
+			return -- onPlay se encargará de matar esta conexión
 		end
-
-		-- Si se reanuda, cortar animación y arrancar timer
-		if currentSound.IsPlaying then
-			-- limpiar animación ANTES de arrancar timer para evitar que siga sobreescribiendo
-			stopPausedAnim()
-			stopBlink()
-			label.TextColor3 = Color3.fromRGB(255,255,255)
-
-			-- Forzar actualización y empezar el heartbeat de update
-			lastTP = -1
-			if hbConn then
-				-- si ya había heartbeat, solo forzar update
-				pcall(update)
-			else
-				-- beginTimer se encargará de crear hbConn
-				-- (usamos pcall para proteger si beginTimer está globalmente definida más abajo)
-				local ok, err = pcall(function() beginTimer(currentSound) end)
-				if not ok then
-					-- fallback: si beginTimer no está visible aún en este scope, simplemente setea hbConn después
-					hbConn = RunService.Heartbeat:Connect(function() end)
-				end
-			end
-			return
+		
+		local elapsedTime = tick() - animStartTime
+		
+		if elapsedTime < animDuration then
+			-- Fase 1: Animación
+			local symbolIndex = math.floor(elapsedTime / symbolInterval) % #symbols + 1
+			pausedLabel.Text = symbols[symbolIndex]
+		else
+			-- Fase 2: Congelar
+			pausedLabel.Text = frozenTime
 		end
-
-		-- Mientras sigue pausado, mostrar tiempo actual (se actualiza si TimePosition cambia)
-		i = i + (dt or 0) * 20
-		local tp = currentSound.TimePosition or 0
-		local rem = math.max(dur - tp, 0)
-		label.Text = format(rem)
 	end)
 end
 
--- 🟦 update (funciona cuando IsPlaying = true)
+-- 🟦 Lógica de Actualización del Contador (para label)
 local function update()
-	if not currentSound then return end
-	local dur = soundDurations[currentSound]
+	-- ¡COMPROBACIÓN MEJORADA!
+	-- Si el bucle del timer detecta que la música se pausó o paró,
+	-- fuerza el estado de "Pausa" y se autodestruye.
+	if not currentSound or not currentSound.IsPlaying then
+		if currentSound then
+			_G.onPause(currentSound) -- Llama a la función global (ver abajo)
+		end
+		
+		if hbConn then hbConn:Disconnect() end
+		hbConn = nil
+		isTimerRunning = false
+		return
+	end
+	
+	local dur = soundDurations[currentSound] or 0
 	local tp = currentSound.TimePosition or 0
 	local rem = math.max(dur - tp, 0)
 
-	-- Si por alguna razón el sonido dejó de reproducir, no bloqueamos; dejamos que pausedAnim lo muestre
-	if not currentSound.IsPlaying then
-		-- dejar texto en rojo para pausa, pero no desconectar update aquí
-		label.TextColor3 = Color3.fromRGB(255,0,0)
-		label.Text = format(rem)
-		lastTP = tp
-		return
-	end
+	local formattedTime = format(rem)
+	frozenTimeText = formattedTime -- Actualiza el tiempo para la pausa
+	
+	label.Text = formattedTime
 
-	-- Normal playback
-	stopPausedAnim()
-	stopBlink()
-	label.TextColor3 = Color3.fromRGB(255,255,255)
-	label.Text = format(rem)
-	label.Visible = true
-
+	-- Lógica de parpadeo
 	if rem <= 26 then
 		if not blinkingConn then beginBlink() end
 	else
@@ -177,82 +187,90 @@ local function update()
 	lastTP = tp
 end
 
--- beginTimer asegura que hbConn está establecido para update
-function beginTimer(s)
-	stopTimer()
+-- Inicia el bucle 'update'
+local function beginTimer(s)
+	if hbConn then hbConn:Disconnect() end
+	hbConn = nil
+	
 	currentSound = s
 	lastTP = s.TimePosition or 0
-	hbConn = RunService.Heartbeat:Connect(update)
-	-- forzamos una actualización inmediata
-	update()
+	isTimerRunning = true
+	
+	hbConn = RunService.Heartbeat:Connect(update) 
+	update() -- Ejecuta una vez inmediatamente
 end
 
--- onPlay / onPause
-local function onPlay(s)
-	if not table.find(trackedSounds, s) then return end
+-- 🟦 Eventos Principales
+-- Los hacemos globales (con _G) para que los bucles de Heartbeat puedan llamarlos
+
+function _G.onPlay(s)
+	if isTimerRunning then return end -- Guarda de estado
 	if isExcluded() then
 		stopTimer()
 		label.Visible = false
+		pausedLabel.Visible = false
 		return
 	end
 
-	-- Detener cualquier animación de pausa que esté activa y forzar update inmediato
+	-- 1. Detener la animación de pausa
 	stopPausedAnim()
-	stopBlink()
-	label.TextColor3 = Color3.fromRGB(255,255,255)
+	
+	-- 2. Mostrar el contador principal (blanco)
 	label.Visible = true
+	label.TextColor3 = Color3.fromRGB(255,255,255) 
 
-	currentSound = s
-	lastTP = -1
+	-- 3. Iniciar el bucle de actualización del contador
+	isTimerRunning = true -- Marcar estado
 	beginTimer(s)
 end
 
-local function onPause(s)
-	if currentSound == s then
-		-- show paused view once
-		pausedAnim()
+function _G.onPause(s)
+	if not table.find(trackedSounds, s) then return end
+	-- Si ya estamos en pausa, no hacer nada
+	if isPausedAnimating then return end 
+	
+	if not currentSound then currentSound = s end
+
+	-- 1. Detener el bucle del contador principal
+	if hbConn then hbConn:Disconnect() end
+	hbConn = nil
+	isTimerRunning = false -- Marcar estado
+	
+	-- 2. Ocultar el contador principal
+	label.Visible = false
+	stopBlink()
+
+	-- 3. Iniciar la animación de pausa
+	-- 'frozenTimeText' fue actualizado por el bucle 'update'
+	if not isPausedAnimating then
+		pausedAnim(frozenTimeText)
 	end
 end
 
 -- bind para cada sonido
 local function bind(s)
-	s.Played:Connect(function() onPlay(s) end)
-	s.Paused:Connect(function() onPause(s) end)
-	s.Stopped:Connect(stopTimer)
+	-- Usamos los eventos como disparadores principales
+	s.Played:Connect(function() _G.onPlay(s) end)
+	s.Paused:Connect(function() _G.onPause(s) end)
+	s.Stopped:Connect(stopTimer) -- stopTimer es una limpieza total
 
-	-- Property change robusto: cuando IsPlaying cambia
-	s:GetPropertyChangedSignal("IsPlaying"):Connect(function()
-		if s.IsPlaying then
-			-- detener animación (si existía) y arrancar timer inmediatamente
-			stopPausedAnim()
-			stopBlink()
-			label.TextColor3 = Color3.fromRGB(255,255,255)
-			currentSound = s
-			lastTP = -1
-			beginTimer(s)
-		else
-			-- iniciar la animación de pausa UNA SOLA VEZ
-			if currentSound == s then
-				pausedAnim()
-			else
-				currentSound = s
-				pausedAnim()
-			end
-		end
-	end)
-
-	-- Si el script se inicia en medio de una canción pausada
+	-- Si el script se carga y la canción YA está sonando
+	if s.IsPlaying then
+		task.defer(function()
+			_G.onPlay(s)
+		end)
+	end
+	
+	-- Si el script se carga y la canción YA está en pausa
 	if s.TimePosition and s.TimePosition > 0 and not s.IsPlaying then
 		currentSound = s
 		lastTP = s.TimePosition
-		pausedAnim()
-	end
-
-	-- Si el script se inicia y la canción ya está sonando
-	if s.IsPlaying then
-		task.defer(function()
-			onPlay(s)
-		end)
+		
+		local dur = soundDurations[currentSound] or 0
+		local rem = math.max(dur - lastTP, 0)
+		frozenTimeText = format(rem)
+		
+		_G.onPause(s)
 	end
 end
 
@@ -261,31 +279,40 @@ for _, s in ipairs(trackedSounds) do
 	bind(s)
 end
 
--- checkChar (mantener comportamiento)
+-- checkChar (al aparecer el personaje)
 local function checkChar()
 	if isExcluded() then
 		stopTimer()
 		label.Visible = false
+		pausedLabel.Visible = false
 		return
 	end
 
-	label.Visible = true
-
+	local soundWasFound = false
 	for _, s in ipairs(trackedSounds) do
 		if s.TimePosition and s.TimePosition > 0 then
+			soundWasFound = true
 			if s.IsPlaying then
-				onPlay(s)
+				_G.onPlay(s)
 			else
 				currentSound = s
 				lastTP = s.TimePosition
-				pausedAnim()
+				local dur = soundDurations[currentSound] or 0
+				local rem = math.max(dur - lastTP, 0)
+				frozenTimeText = format(rem)
+				
+				_G.onPause(s)
 			end
 			return
 		end
 	end
 
-	stopTimer()
-	label.Text = "0:00"
+	if not soundWasFound then
+		stopTimer()
+		label.Text = "0:00"
+		label.Visible = true
+		pausedLabel.Visible = false
+	end
 end
 
 player.CharacterAdded:Connect(function()
