@@ -1,4 +1,4 @@
--- 🟦 Book BillboardGui Robusto (versión optimizada)
+-- 🟦 Book BillboardGui Robusto (versión simplificada)
 repeat task.wait() until game:IsLoaded()
 
 ------------------------------------------------------------
@@ -14,8 +14,7 @@ if not player then return end
 -- ⚙️ Configuración
 ------------------------------------------------------------
 local IMAGE_ID = "rbxassetid://17537434140"
-local RENDER_DISTANCE = 150
-local UPDATE_THRESHOLD = 5
+local RENDER_DISTANCE = 150 -- Esta es la distancia que usará el BillboardGui
 local CLEANUP_DELAY = 50
 local AUTOVERIFIER_INTERVAL = 12
 
@@ -24,7 +23,6 @@ local AUTOVERIFIER_INTERVAL = 12
 ------------------------------------------------------------
 local asleep = false
 local billboards = {}
-local visibilityState = {}
 local billboardsFolder = Workspace:FindFirstChild("BillboardGuiBooks_Cache")
 if not billboardsFolder then
 	billboardsFolder = Instance.new("Folder")
@@ -38,13 +36,6 @@ local cleanupTimer = nil
 ------------------------------------------------------------
 -- 🔧 Utilidades
 ------------------------------------------------------------
-local function getLocalPos()
-	local char = player.Character
-	if not char then return nil end
-	local root = char:FindFirstChild("HumanoidRootPart")
-	return root and root.Position or nil
-end
-
 local function getTargetPart(book)
 	if not book then return nil end
 	if book:IsA("BasePart") then return book end
@@ -64,7 +55,6 @@ local function removeBillboard(part)
 	if bb then
 		if bb.Parent then bb:Destroy() end
 		billboards[part] = nil
-		visibilityState[part] = nil
 	end
 end
 
@@ -87,9 +77,9 @@ local function createBillboard(target)
 	bb.Name = "Book_Billboard_" .. target.Name
 	bb.AlwaysOnTop = true
 	bb.Size = UDim2.new(2.5, 0, 2.5, 0)
-	bb.MaxDistance = RENDER_DISTANCE
+	bb.MaxDistance = RENDER_DISTANCE -- Confiamos en esta propiedad
 	bb.LightInfluence = 0
-	bb.Enabled = false
+	bb.Enabled = true -- Lo activamos de inmediato
 	bb.Adornee = target
 	bb.Parent = billboardsFolder
 
@@ -115,27 +105,6 @@ local function createBillboard(target)
 end
 
 ------------------------------------------------------------
--- 🔁 Actualizar visibilidad según distancia
-------------------------------------------------------------
-local function updateBillboardsInRange(force)
-	local localPos = getLocalPos()
-	if asleep or not localPos then return end
-
-	for part, bb in pairs(billboards) do
-		if not part or not part.Parent then
-			removeBillboard(part)
-		else
-			local dist = (part.Position - localPos).Magnitude
-			local visible = dist <= RENDER_DISTANCE
-			if force or visibilityState[part] ~= visible then
-				visibilityState[part] = visible
-				bb.Enabled = visible
-			end
-		end
-	end
-end
-
-------------------------------------------------------------
 -- 🚀 Activar libros existentes
 ------------------------------------------------------------
 local function activateBooks()
@@ -146,7 +115,6 @@ local function activateBooks()
 			createBillboard(target)
 		end
 	end
-	updateBillboardsInRange(true)
 end
 
 ------------------------------------------------------------
@@ -161,7 +129,6 @@ local function connectBookEvents()
 		local target = getTargetPart(child)
 		if target then
 			createBillboard(target)
-			updateBillboardsInRange(true)
 		end
 	end)
 
@@ -184,7 +151,6 @@ local function scheduleCleanup()
 		for part, bb in pairs(billboards) do
 			if bb and bb.Parent then bb:Destroy() end
 			billboards[part] = nil
-			visibilityState[part] = nil
 		end
 		cleanupTimer = nil
 	end)
@@ -233,23 +199,8 @@ Workspace.ChildRemoved:Connect(function(child)
 end)
 
 ------------------------------------------------------------
--- 🧍‍♂️ Movimiento del jugador
+-- 🧍‍♂️ Eventos del Jugador
 ------------------------------------------------------------
-local function hookPlayerMovement(character)
-	local root = character:WaitForChild("HumanoidRootPart", 3)
-	if not root then return end
-	local lastPos = root.Position
-
-	root:GetPropertyChangedSignal("Position"):Connect(function()
-		if asleep then return end
-		local newPos = root.Position
-		if (newPos - lastPos).Magnitude > UPDATE_THRESHOLD then
-			lastPos = newPos
-			updateBillboardsInRange()
-		end
-	end)
-end
-
 player.CharacterRemoving:Connect(function()
 	for _, bb in pairs(billboards) do
 		if bb then bb.Enabled = false end
@@ -267,22 +218,20 @@ task.spawn(function()
 			continue
 		end
 
-		local missing = false
+		-- Verifica si faltan billboards
 		for _, obj in ipairs(booksFolder:GetChildren()) do
 			local target = getTargetPart(obj)
 			if target and not billboards[target] then
 				createBillboard(target)
-				missing = true
 			end
 		end
 
+		-- Limpia billboards de partes que ya no existen
 		for part, bb in pairs(billboards) do
 			if not part or not part.Parent then
 				removeBillboard(part)
 			end
 		end
-
-		if missing then updateBillboardsInRange(true) end
 	end
 end)
 
@@ -302,11 +251,9 @@ end
 player.CharacterAdded:Connect(function(char)
 	char:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	task.defer(initializeBookSystem)
-	hookPlayerMovement(char)
 end)
 
 if player.Character then
 	player.Character:GetPropertyChangedSignal("Parent"):Connect(checkSleepState)
 	task.defer(initializeBookSystem)
-	hookPlayerMovement(player.Character)
 end
