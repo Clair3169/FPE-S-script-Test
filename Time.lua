@@ -1,103 +1,181 @@
 local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer or Players:GetPlayers()[1]
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Crear GUI si no existe
 local screenGui = playerGui:FindFirstChild("MusicTimerGui") or Instance.new("ScreenGui")
 screenGui.Name = "MusicTimerGui"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
--- Crear etiqueta del temporizador si no existe
 local label = screenGui:FindFirstChild("TimerLabel") or Instance.new("TextLabel")
 label.Name = "TimerLabel"
-label.Size = UDim2.new(0, 90, 0, 28) -- más pequeño
-label.Position = UDim2.new(0.5, -45, 0, -3) -- arriba y centrado
+label.Size = UDim2.new(0, 90, 0, 28)
+label.Position = UDim2.new(0.5, -45, 0, -3)
 label.BackgroundTransparency = 1
-label.TextColor3 = Color3.fromRGB(255, 255, 255)
+label.TextColor3 = Color3.fromRGB(255,255,255)
 label.TextScaled = true
 label.Font = Enum.Font.GothamBold
-label.Text = "-:--"
+label.Text = "0:00"
 label.Visible = true
 label.Parent = screenGui
 
--- Referencias de sonidos
 local phaseSongs = SoundService:WaitForChild("AllMusic"):WaitForChild("PhaseSongs")
-local base = phaseSongs:WaitForChild("Base")
-local phase2 = phaseSongs:WaitForChild("Phase2")
+local baseFolder = phaseSongs:WaitForChild("Base")
+local phase2Folder = phaseSongs:WaitForChild("Phase2")
 
-local quietHalls = base:WaitForChild("QuietHalls")
-local properBehavior = base:WaitForChild("ProperBehavior")
-local studentSound = phase2:WaitForChild("Student")
+local quietHalls = baseFolder:WaitForChild("QuietHalls")
+local properBehavior = baseFolder:WaitForChild("ProperBehavior")
+local studentSound = phase2Folder:WaitForChild("Student")
 
--- [[ ¡AQUÍ ESTÁ LA SOLUCIÓN! ]]
--- En esta tabla, defines cuántos segundos quieres "recortar" del final de cada música.
--- ¡Puedes cambiar estos valores como quieras!
--- para retar minutos es escribir un calculo (2 * 60) + 13, 2 min con 13 segundos
--- (-- * 60) + --
-local soundOffsets = {
-	[quietHalls] = 0,     -- Ejemplo: Resta 3.5 segundos al total de quietHalls
-	[properBehavior] = 3,  -- Ejemplo: Resta 2 segundos al total de properBehavior
-	[studentSound] = 13    -- Ejemplo: No resta nada a studentSound (puedes poner el valor que quieras)
+local trackedSounds = { quietHalls, properBehavior, studentSound }
+
+local soundDurations = {
+    [quietHalls] = 6*60,
+    [properBehavior] = (2*60)+1,
+    [studentSound] = (3*60)+16
 }
 
--- Función de formato M:SS (MODIFICADA)
-local function formatTime(seconds)
-	local minutes = math.floor(seconds / 60)
-	local secs = math.floor(seconds % 60)
-	-- Se cambió %02d por %d para los minutos
-	return string.format("%d:%02d", minutes, secs) 
+local currentSound = nil
+local hbConn = nil
+local blinkingConn = nil
+local pausedAnimConn = nil
+
+local symbols = {"∆∆∆∆","!¡?¿","!¡!!!¿!!","??¡???!??","∆∆∆∆∆∆∆∆∆∆∆", "XD"}
+
+local function format(sec)
+    return string.format("%d:%02d", sec//60, sec%60)
 end
 
--- Esperar hasta que los sonidos tengan duración
-repeat task.wait() until quietHalls.TimeLength > 0 and properBehavior.TimeLength > 0 and studentSound.TimeLength > 0
-
--- Comprobar si el jugador está en Alices o Teachers
-local function isInExcludedFolder()
-	local char = player.Character
-	if not char then return false end
-	local parent = char.Parent
-	return parent and (parent.Name == "Alices" or parent.Name == "Teachers")
+local function isExcluded()
+    local char = player.Character
+    if not char or not char.Parent then return false end
+    local parent = char.Parent.Name
+    return parent == "Alices" or parent == "Teachers"
 end
 
--- Bucle principal del temporizador
-task.spawn(function()
-	while task.wait(0.1) do
-		label.Visible = not isInExcludedFolder()
+local function stopBlink()
+    if blinkingConn then blinkingConn:Disconnect() end
+    blinkingConn = nil
+end
 
-		local activeSound
-		if studentSound.IsPlaying then
-			activeSound = studentSound
-		elseif properBehavior.IsPlaying then
-			activeSound = properBehavior
-		elseif quietHalls.IsPlaying then
-			activeSound = quietHalls
-		end
+local function stopPausedAnim()
+    if pausedAnimConn then pausedAnimConn:Disconnect() end
+    pausedAnimConn = nil
+end
 
-		if activeSound then
-			-- [[ MODIFICACIÓN DEL CÁLCULO ]]
-			
-			-- 1. Obtenemos el descuento de tiempo para la canción actual (0 si no está en la tabla)
-			local offset = soundOffsets[activeSound] or 0
-			
-			-- 2. Calculamos la duración "efectiva" restando ese descuento
-			local effectiveTimeLength = activeSound.TimeLength - offset
-			
-			-- 3. Calculamos el tiempo restante usando la nueva duración efectiva
-			local remaining = math.max(effectiveTimeLength - activeSound.TimePosition, 0)
-			
-			-- [[ FIN DE LA MODIFICACIÓN ]]
+local function stopTimer()
+    if hbConn then hbConn:Disconnect() end
+    hbConn = nil
+    stopBlink()
+    stopPausedAnim()
+end
 
-			label.Text = formatTime(remaining)
+local function beginBlink()
+    stopBlink()
+    blinkingConn = RunService.Heartbeat:Connect(function()
+        local t = tick() % 1
+        label.TextColor3 = (t < 0.5)
+            and Color3.fromRGB(255,0,0)
+            or Color3.fromRGB(255,255,255)
+    end)
+end
 
-			-- Cambiar color cuando queden <= 25s
-			if remaining <= 25 then
-				label.TextColor3 = Color3.fromRGB(255, 0, 0)
-			else
-				label.TextColor3 = Color3.fromRGB(255, 255, 255)
-			end
-		end
-	end
+local function update()
+    if not currentSound then return end
+
+    if not currentSound.IsPlaying then return end
+    stopPausedAnim()
+
+    local dur = soundDurations[currentSound]
+    local rem = math.max(dur - currentSound.TimePosition, 0)
+    label.Text = format(rem)
+    label.Visible = true
+
+    if rem <= 26 then
+        if not blinkingConn then beginBlink() end
+    else
+        stopBlink()
+        label.TextColor3 = Color3.fromRGB(255,255,255)
+    end
+end
+
+local function beginTimer(s)
+    stopTimer()
+    currentSound = s
+    hbConn = RunService.Heartbeat:Connect(update)
+    update()
+end
+
+local function pausedAnim()
+    stopBlink()
+    stopPausedAnim()
+
+    label.TextColor3 = Color3.fromRGB(255,0,0)
+    local dur = soundDurations[currentSound]
+    local rem = math.max(dur - currentSound.TimePosition, 0)
+
+    local i = 0
+    pausedAnimConn = RunService.Heartbeat:Connect(function(dt)
+        i = i + dt*20
+        label.Text = symbols[(math.floor(i)%#symbols)+1]
+    end)
+
+    task.delay(1, function()
+        if pausedAnimConn then pausedAnimConn:Disconnect() end
+        pausedAnimConn = nil
+        label.Text = format(rem)
+        label.TextColor3 = Color3.fromRGB(255,0,0)
+    end)
+end
+
+local function onPlay(s)
+    if isExcluded() then
+        stopTimer()
+        label.Visible = false
+        return
+    end
+
+    label.Visible = true
+    if table.find(trackedSounds, s) then
+        beginTimer(s)
+    end
+end
+
+local function onPause(s)
+    if s == currentSound then
+        pausedAnim()
+    end
+end
+
+local function bind(s)
+    s.Played:Connect(function() onPlay(s) end)
+    s.Paused:Connect(function() onPause(s) end)
+    s.Stopped:Connect(stopTimer)
+end
+
+for _,s in ipairs(trackedSounds) do bind(s) end
+
+local function checkChar()
+    if isExcluded() then
+        stopTimer()
+        label.Visible = false
+        return
+    end
+
+    label.Visible = true
+    for _, s in ipairs(trackedSounds) do
+        if s.IsPlaying then beginTimer(s) return end
+    end
+    stopTimer()
+end
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.2)
+    checkChar()
 end)
+
+task.defer(checkChar)
