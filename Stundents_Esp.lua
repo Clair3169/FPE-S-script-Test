@@ -15,8 +15,9 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 -- ⚙️ Configuración
 ------------------------------------------------------------
 local MAX_VISIBLE = 10
+-- --- CAMBIO 1: Volvemos a definir la distancia máxima aquí.
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 2
+local UPDATE_THRESHOLD = 5
 
 ------------------------------------------------------------
 -- 🧠 Estado
@@ -78,6 +79,7 @@ local function getOrCreateBillboard(character)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
 	billboard.Enabled = false
+	-- --- CAMBIO 1: Asignamos la propiedad MaxDistance que Roblox usará.
 	billboard.MaxDistance = MAX_DISTANCE
 	billboard.Adornee = character:FindFirstChild("Head") or character:FindFirstChildWhichIsA("BasePart")
 	billboard.Parent = billboardCache
@@ -93,6 +95,7 @@ local function getOrCreateBillboard(character)
 	return billboard
 end
 
+-- --- CAMBIO 1: Ya no necesitamos pasar la distancia aquí.
 local function updateBillboardState(character, state)
 	local billboard = activeBillboards[character]
 	if not billboard and state then
@@ -154,12 +157,19 @@ local function updateVisibleStudents()
 	local distances = {}
 	for _, student in ipairs(studentsFolder:GetChildren()) do
 		if student:IsA("Model") and student ~= localPlayer.Character then
+			
+			-- --- CAMBIO 3 (Se mantiene): Detecta estudiantes nuevos aquí.
+			if not activeBillboards[student] then
+				queueBillboardCreation(student)
+			end
+
 			local pos = getModelPosition(student)
 			if pos then
 				local dist = (localPos - pos).Magnitude
-				if dist <= MAX_DISTANCE then
-					table.insert(distances, {student, dist})
-				end
+				-- --- CAMBIO 1 (Clave): Eliminamos el filtro 'if dist <= MAX_DISTANCE'.
+				-- Ahora el script buscará los 10 más cercanos,
+				-- sin importar si están a 5 o 500 studs.
+				table.insert(distances, {student, dist})
 			end
 		end
 	end
@@ -233,13 +243,12 @@ end
 -- 🧍‍♂️ Eventos Students
 ------------------------------------------------------------
 studentsFolder.ChildAdded:Connect(function(child)
-		
+	-- No es necesario, el Auto-verificador lo maneja.
 end)
 
 studentsFolder.ChildRemoved:Connect(function(child)
 	local bb = activeBillboards[child]
 	if bb then
-			
 		bb.Enabled = false
 		bb.Adornee = nil 
 	end
@@ -319,17 +328,7 @@ task.spawn(function()
 	while task.wait(0.8) do
 		if not systemActive then continue end
 
-		local missing = false
-
-		for _, student in ipairs(studentsFolder:GetChildren()) do
-			if student:IsA("Model") and student ~= localPlayer.Character then
-				if not activeBillboards[student] then
-					missing = true
-					queueBillboardCreation(student)
-				end
-			end
-		end
-
+		-- 1. Limpieza de estudiantes que ya no existen
 		for student, bb in pairs(activeBillboards) do
 			if not student or not student.Parent then
 				if bb then bb:Destroy() end
@@ -338,21 +337,15 @@ task.spawn(function()
 			end
 		end
 
-		if missing then
-			updateVisibleStudents()
-		end
+		-- --- CAMBIO 2 (Se mantiene): Se ejecuta siempre para
+		-- actualizar si alguien se acerca.
+		updateVisibleStudents()
 	end
 end)
 
 ------------------------------------------------------------
 -- 🚀 Inicialización (corregida)
 ------------------------------------------------------------
-for _, student in ipairs(studentsFolder:GetChildren()) do
-	if student:IsA("Model") and student ~= localPlayer.Character then
-		queueBillboardCreation(student)
-	end
-end
-
 task.defer(function()
 	updateSystemStatus(true)
 end)
