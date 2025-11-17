@@ -127,7 +127,7 @@ local function pausedAnim(frozenTime)
 
 	local animStartTime = tick()
 	local animDuration = 1
-	local symbolInterval = 0.15
+	local symbolInterval = 0.5
 
 	pausedAnimConn = RunService.Heartbeat:Connect(function(dt)
 		-- ¡NUEVA COMPROBACIÓN!
