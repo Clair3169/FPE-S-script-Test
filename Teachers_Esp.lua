@@ -120,6 +120,89 @@ local function destroyBillboardStrict(model)
 end
 
 ------------------------------------------------------
+-- 🔍 Reglas de observación por equipo
+------------------------------------------------------
+local function detectLocalFolder()
+	for name, folder in pairs(Folders) do
+		if folder:FindFirstChild(LocalPlayer.Name) then
+			return name
+		end
+	end
+	return nil
+end
+
+local function shouldLocalSeeModel(localFolder, targetFolder, model)
+	if not localFolder or not targetFolder or not model then return false end
+	-- no mostrar billboards del propio jugador
+	if model.Name == LocalPlayer.Name then return false end
+
+	if localFolder == "Students" then
+		return targetFolder == "Teachers" or targetFolder == "Alices"
+	elseif localFolder == "Teachers" then
+		return targetFolder == "Alices"
+	elseif localFolder == "Alices" then
+		return targetFolder == "Teachers"
+	end
+	return false
+end
+
+------------------------------------------------------
+-- 👁️ Visibilidad dinámica
+-- (MOVIDA AQUÍ PARA QUE EXISTA ANTES DE SER LLAMADA)
+------------------------------------------------------
+local function updateVisibility(model)
+	local data = Cache.Billboards[model]
+	if not data or not data.gui then return end
+
+	-- Si el modelo ya no está en su carpeta: destruir (es eliminación real)
+	if not isModelInFolder(model, data.folder) then
+		destroyBillboardStrict(model)
+		return
+	end
+
+	-- Reforzar referencia a la cabeza (si se perdió)
+	local head = data.headRef
+	
+	if not (head and head.Parent) then
+		head = getRealHead(model) -- Intenta buscar la *nueva* cabeza
+		if not head then
+			data.gui.Enabled = false
+			return
+		end
+		data.headRef = head
+		data.gui.Adornee = head
+	end
+
+	-- 1. Chequear si el jugador local DEBE ver este modelo por reglas de equipo
+	local localFolder = detectLocalFolder()
+	local canSeeBasedOnTeam = shouldLocalSeeModel(localFolder, data.folder, model)
+
+	if not canSeeBasedOnTeam then
+		-- Si no debe verlo por equipo, deshabilitar y salir.
+		data.gui.Enabled = false
+		return
+	end
+
+	-- --- 🔥 SOLUCIÓN 2: Restaurar el chequeo de distancia manual ---
+	-- 2. Si puede verlo, chequear distancia
+	local dist = getDistanceFromLocal(head) -- 'head' ahora es VÁLIDA
+	local shouldShow = dist <= MAX_RENDER_DISTANCE
+
+	data.gui.Enabled = shouldShow
+end
+
+-- --- Definición de la función 'updateAllVisibility' ---
+local function updateAllVisibility()
+	-- Itera sobre todos los billboards que tenemos en caché
+	for model, data in pairs(Cache.Billboards) do
+		if data and data.gui then
+			-- Re-ejecuta la lógica de visibilidad para este modelo
+			updateVisibility(model)
+		end
+	end
+end
+
+------------------------------------------------------
 -- 📦 Sistema de caché Billboard (con carpeta física)
 ------------------------------------------------------
 local function createOrReuseBillboard(model, folderName)
@@ -226,88 +309,6 @@ local function destroyAllFromFolder(folderName)
 	for model, data in pairs(Cache.Billboards) do
 		if data and data.folder == folderName then
 			destroyBillboardStrict(model)
-		end
-	end
-end
-
-------------------------------------------------------
--- 🔍 Reglas de observación por equipo
-------------------------------------------------------
-local function detectLocalFolder()
-	for name, folder in pairs(Folders) do
-		if folder:FindFirstChild(LocalPlayer.Name) then
-			return name
-		end
-	end
-	return nil
-end
-
-local function shouldLocalSeeModel(localFolder, targetFolder, model)
-	if not localFolder or not targetFolder or not model then return false end
-	-- no mostrar billboards del propio jugador
-	if model.Name == LocalPlayer.Name then return false end
-
-	if localFolder == "Students" then
-		return targetFolder == "Teachers" or targetFolder == "Alices"
-	elseif localFolder == "Teachers" then
-		return targetFolder == "Alices"
-	elseif localFolder == "Alices" then
-		return targetFolder == "Teachers"
-	end
-	return false
-end
-
-------------------------------------------------------
--- 👁️ Visibilidad dinámica
-------------------------------------------------------
-local function updateVisibility(model)
-	local data = Cache.Billboards[model]
-	if not data or not data.gui then return end
-
-	-- Si el modelo ya no está en su carpeta: destruir (es eliminación real)
-	if not isModelInFolder(model, data.folder) then
-		destroyBillboardStrict(model)
-		return
-	end
-
-	-- Reforzar referencia a la cabeza (si se perdió)
-	local head = data.headRef
-	
-	if not (head and head.Parent) then
-		head = getRealHead(model) -- Intenta buscar la *nueva* cabeza
-		if not head then
-			data.gui.Enabled = false
-			return
-		end
-		data.headRef = head
-		data.gui.Adornee = head
-	end
-
-	-- 1. Chequear si el jugador local DEBE ver este modelo por reglas de equipo
-	local localFolder = detectLocalFolder()
-	local canSeeBasedOnTeam = shouldLocalSeeModel(localFolder, data.folder, model)
-
-	if not canSeeBasedOnTeam then
-		-- Si no debe verlo por equipo, deshabilitar y salir.
-		data.gui.Enabled = false
-		return
-	end
-
-	-- --- 🔥 SOLUCIÓN 2: Restaurar el chequeo de distancia manual ---
-	-- 2. Si puede verlo, chequear distancia
-	local dist = getDistanceFromLocal(head) -- 'head' ahora es VÁLIDA
-	local shouldShow = dist <= MAX_RENDER_DISTANCE
-
-	data.gui.Enabled = shouldShow
-end
-
--- --- Definición de la función 'updateAllVisibility' ---
-local function updateAllVisibility()
-	-- Itera sobre todos los billboards que tenemos en caché
-	for model, data in pairs(Cache.Billboards) do
-		if data and data.gui then
-			-- Re-ejecuta la lógica de visibilidad para este modelo
-			updateVisibility(model)
 		end
 	end
 end
