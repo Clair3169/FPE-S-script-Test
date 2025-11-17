@@ -16,7 +16,7 @@ local VALID_FOLDERS = { "Alices", "Teachers" }
 ------------------------------------------------------------
 local MAX_VISIBLE = 10
 local MAX_DISTANCE = 200
-local UPDATE_THRESHOLD = 5
+local UPDATE_THRESHOLD = 2
 
 ------------------------------------------------------------
 -- 🧠 Estado
@@ -122,7 +122,7 @@ local function queueBillboardCreation(character)
 					getOrCreateBillboard(student)
 					break
 				end
-				task.wait(0.8)
+				task.wait(1)
 			end
 			creating = false
 		end)
