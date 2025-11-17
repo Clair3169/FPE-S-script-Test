@@ -126,7 +126,7 @@ local function pausedAnim(frozenTime)
 	stopBlink()
 
 	local animStartTime = tick()
-	local animDuration = 0.30
+	local animDuration = 1
 	local symbolInterval = 0.15
 
 	pausedAnimConn = RunService.Heartbeat:Connect(function(dt)
