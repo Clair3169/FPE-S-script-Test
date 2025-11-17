@@ -41,7 +41,6 @@ pausedLabel.Parent = screenGui
 
 
 -- 🟦 Sonidos
--- Asegúrate de que estas rutas sean correctas antes de ejecutar.
 local phaseSongs = SoundService:WaitForChild("AllMusic"):WaitForChild("PhaseSongs")
 local baseFolder = phaseSongs:WaitForChild("Base")
 local phase2Folder = phaseSongs:WaitForChild("Phase2")
@@ -53,7 +52,7 @@ local studentSound = phase2Folder:WaitForChild("Student")
 local trackedSounds = { quietHalls, properBehavior, studentSound }
 
 local soundDurations = {
-	[quietHalls] = (6*60)+2,
+	[quietHalls] = (6*60)+1,
 	[properBehavior] = (2*60)+1,
 	[studentSound] = (3*60)+16
 }
@@ -64,9 +63,9 @@ local hbConn = nil -- Conexión Heartbeat para el contador principal (label)
 local blinkingConn = nil -- Conexión Heartbeat para el parpadeo de urgencia
 local pausedAnimConn = nil -- Conexión Heartbeat para la animación de pausa (pausedLabel)
 local lastTP = 0
-local isTimerRunning = false -- Guarda de estado del Timer principal
-local isPausedAnimating = false -- Guarda de estado de la animación de pausa
-local frozenTimeText = "0:00" -- Tiempo congelado para la pausa
+local isTimerRunning = false -- ¡NUEVO! Guarda de estado
+local isPausedAnimating = false
+local frozenTimeText = "0:00"
 
 local symbols = {"∆∆∆∆", "!!¡!!¡¿!", "¡!#¡!!¡¡¡", "?¿!¡?", "¿?!¿¡?", "XDD"}
 
@@ -131,11 +130,12 @@ local function pausedAnim(frozenTime)
 	local symbolInterval = 0.10
 
 	pausedAnimConn = RunService.Heartbeat:Connect(function(dt)
-		-- Si el bucle de pausa detecta que la música se reanudó (IsPlaying),
-		-- llama a onPlay para tomar el control y se autodestruye.
+		-- ¡NUEVA COMPROBACIÓN!
+		-- Si el bucle de pausa detecta que la música se reanudó,
+		-- fuerza el estado de "Play" y se autodestruye.
 		if currentSound and currentSound.IsPlaying then
-			_G.onPlay(currentSound) 
-			return
+			_G.onPlay(currentSound) -- Llama a la función global (ver abajo)
+			return -- onPlay se encargará de matar esta conexión
 		end
 		
 		local elapsedTime = tick() - animStartTime
@@ -153,9 +153,16 @@ end
 
 -- 🟦 Lógica de Actualización del Contador (para label)
 local function update()
+	-- ¡COMPROBACIÓN MEJORADA!
 	-- Si el bucle del timer detecta que la música se pausó o paró,
-	-- fuerza el estado de "Pausa/Stop" y se autodestruye.
+	-- fuerza el estado de "Pausa" y se autodestruye.
 	if not currentSound or not currentSound.IsPlaying then
+		
+        -- [[ LÍNEA ELIMINADA PARA SOLUCIONAR P1 ]]
+		-- if currentSound then
+		-- 	_G.onPause(currentSound) -- <-- ESTA LÍNEA CAUSABA EL ERROR
+		-- end
+		
 		if hbConn then hbConn:Disconnect() end
 		hbConn = nil
 		isTimerRunning = false
@@ -195,11 +202,12 @@ local function beginTimer(s)
 	update() -- Ejecuta una vez inmediatamente
 end
 
--- 🟦 Eventos Principales (Globales)
+-- 🟦 Eventos Principales
+-- Los hacemos globales (con _G) para que los bucles de Heartbeat puedan llamarlos
 function _G.onPlay(s)
-	-- El sonido debe tener volumen > 0 para que se muestre el Timer
-	if s.Volume == 0 then return end
-	
+    -- 🟦 CAMBIO (PROBLEMA 2)
+	-- if isTimerRunning then return end -- Original
+    
     -- Si el timer ya corre Y es para EL MISMO sonido (ej. un falso evento Played), salir.
 	if isTimerRunning and currentSound == s then return end
 
@@ -208,6 +216,7 @@ function _G.onPlay(s)
 	if isTimerRunning and currentSound ~= s then
 		if hbConn then hbConn:Disconnect() end
 		hbConn = nil
+		-- 'isTimerRunning' se seteará a 'true' de nuevo más abajo.
 	end
 
 	if isExcluded() then
@@ -231,9 +240,6 @@ end
 
 function _G.onPause(s)
 	if not table.find(trackedSounds, s) then return end
-	-- El sonido debe tener volumen > 0 para que se muestre la Pausa
-	if s.Volume == 0 then return end
-	
 	-- Si ya estamos en pausa, no hacer nada
 	if isPausedAnimating then return end 
 	
@@ -287,7 +293,7 @@ for _, s in ipairs(trackedSounds) do
 	bind(s)
 end
 
--- checkChar (al aparecer el personaje) - Implementa la prioridad de volumen
+-- checkChar (al aparecer el personaje)
 local function checkChar()
 	if isExcluded() then
 		stopTimer()
@@ -296,48 +302,29 @@ local function checkChar()
 		return
 	end
 
-	local bestSound = nil
-	local highestVolume = 0
-
-	-- 1. Iterar y encontrar el mejor sonido
+	local soundWasFound = false
 	for _, s in ipairs(trackedSounds) do
-		-- Solo consideramos sonidos que se están reproduciendo O que están en pausa (TimePosition > 0)
-		-- Y que su volumen es mayor a 0 (la condición más importante: prioriza volumen > 0).
-		if (s.IsPlaying or (s.TimePosition and s.TimePosition > 0)) and s.Volume > 0 then
-			
-			-- Si el volumen es más alto que el actual más alto, seleccionarlo
-			if s.Volume > highestVolume then
-				highestVolume = s.Volume
-				bestSound = s
+		if s.TimePosition and s.TimePosition > 0 then
+			soundWasFound = true
+			if s.IsPlaying then
+				_G.onPlay(s)
+			else
+				currentSound = s
+				lastTP = s.TimePosition
+				local dur = soundDurations[currentSound] or 0
+				local rem = math.max(dur - lastTP, 0)
+				frozenTimeText = format(rem)
+				
+				_G.onPause(s)
 			end
-			
+			return
 		end
 	end
 
-	-- 2. Manejar el sonido seleccionado (bestSound)
-	if bestSound then
-		
-		-- Si el sonido está sonando, forzar el estado de "Play" (onPlay)
-		if bestSound.IsPlaying then
-			_G.onPlay(bestSound)
-			
-		-- Si el sonido está pausado, forzar el estado de "Pause" (onPause)
-		elseif bestSound.TimePosition and bestSound.TimePosition > 0 then
-			currentSound = bestSound
-			lastTP = bestSound.TimePosition
-			
-			local dur = soundDurations[currentSound] or 0
-			local rem = math.max(dur - lastTP, 0)
-			frozenTimeText = format(rem)
-			
-			_G.onPause(bestSound)
-		end
-		
-	-- 3. Si no se encontró ningún sonido elegible (volumen 0 o no activo), detener y reiniciar
-	else
+	if not soundWasFound then
 		stopTimer()
 		label.Text = "0:00"
-		label.Visible = true -- Mostrar "0:00" por defecto (si el usuario no está excluido)
+		label.Visible = true
 		pausedLabel.Visible = false
 	end
 end
