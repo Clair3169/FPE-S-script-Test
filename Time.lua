@@ -157,9 +157,11 @@ local function update()
 	-- Si el bucle del timer detecta que la música se pausó o paró,
 	-- fuerza el estado de "Pausa" y se autodestruye.
 	if not currentSound or not currentSound.IsPlaying then
-		if currentSound then
-			_G.onPause(currentSound) -- Llama a la función global (ver abajo)
-		end
+		
+        -- [[ LÍNEA ELIMINADA PARA SOLUCIONAR P1 ]]
+		-- if currentSound then
+		-- 	_G.onPause(currentSound) -- <-- ESTA LÍNEA CAUSABA EL ERROR
+		-- end
 		
 		if hbConn then hbConn:Disconnect() end
 		hbConn = nil
@@ -202,9 +204,21 @@ end
 
 -- 🟦 Eventos Principales
 -- Los hacemos globales (con _G) para que los bucles de Heartbeat puedan llamarlos
-
 function _G.onPlay(s)
-	if isTimerRunning then return end -- Guarda de estado
+    -- 🟦 CAMBIO (PROBLEMA 2)
+	-- if isTimerRunning then return end -- Original
+    
+    -- Si el timer ya corre Y es para EL MISMO sonido (ej. un falso evento Played), salir.
+	if isTimerRunning and currentSound == s then return end
+
+	-- Si el timer está corriendo para OTRO sonido, detenemos el bucle
+	-- de Heartbeat (hbConn) anterior para que el nuevo sonido tome el control.
+	if isTimerRunning and currentSound ~= s then
+		if hbConn then hbConn:Disconnect() end
+		hbConn = nil
+		-- 'isTimerRunning' se seteará a 'true' de nuevo más abajo.
+	end
+
 	if isExcluded() then
 		stopTimer()
 		label.Visible = false
