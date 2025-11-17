@@ -32,7 +32,7 @@ pausedLabel.Name = "PausedLabel"
 pausedLabel.Size = UDim2.new(0, 90, 0, 28)
 pausedLabel.Position = UDim2.new(0.5, -45, 0, -3)
 pausedLabel.BackgroundTransparency = 1
-pausedLabel.TextColor3 = Color3.fromRGB(255, 80, 80) -- Color rojo para la pausa
+pausedLabel.TextColor3 = Color3.fromRGB(255, 0, 0) -- Color rojo para la pausa
 pausedLabel.TextScaled = true
 pausedLabel.Font = Enum.Font.GothamBold
 pausedLabel.Text = "||"
@@ -121,7 +121,7 @@ local function pausedAnim(frozenTime)
 	isTimerRunning = false
 
 	pausedLabel.Visible = true
-	pausedLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	pausedLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
 	
 	stopBlink()
 
