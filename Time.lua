@@ -1,4 +1,4 @@
--- Versión avanzada: pausa, carpetas excluidas, color rojo, fade, prioridad por volumen y animación glitch para Student
+-- Versión avanzada: pausa, carpetas excluidas, color rojo, fade, prioridad por volumen, glitch Student y parpadeo final
 local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,8 +7,8 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer or Players:GetPlayers()[1]
 local playerGui = player:WaitForChild("PlayerGui")
 
-local screenGui = playerGui:FindFirstChild("MusicTimerGui") or Instance.new("ScreenGui")
-screenGui.Name = "MusicTimerGui"
+local screenGui = playerGui:FindFirstChild("TimerGui") or Instance.new("ScreenGui")
+screenGui.Name = "TimerGui"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -24,7 +24,7 @@ label.TextScaled = true
 label.Font = Enum.Font.GothamBold
 label.Text = "0:00"
 label.Visible = true
-label.ZIndex = 10
+label.ZIndex = 20
 label.Parent = screenGui
 
 -- Sonidos
@@ -38,8 +38,8 @@ local studentSound    = phase2Folder:WaitForChild("Student")
 
 local trackedSounds = { quietHalls, properBehavior, studentSound }
 
--- Duraciones personalizables
 -- 	[quietHalls]     = (6*60)+2,
+-- Duraciones personalizables
 local soundDurations = {
 	[properBehavior] = (2*60)+1,
 	[studentSound]   = (3*60)+16
@@ -47,6 +47,7 @@ local soundDurations = {
 
 local currentSound = nil
 local hbConn = nil
+local zeroBlinkConn = nil
 
 local function format(sec)
 	return string.format("%d:%02d", math.floor(sec/60), math.floor(sec%60))
@@ -74,11 +75,28 @@ local function fadeLabel(show)
 	end
 end
 
+-- Parpadeo final 0:00
+local function zeroBlink()
+	if zeroBlinkConn then zeroBlinkConn:Disconnect() end
+	local start = tick()
+	zeroBlinkConn = RunService.Heartbeat:Connect(function()
+		local elapsed = tick() - start
+		label.Visible = true
+		label.TextColor3 = (math.floor(elapsed / 0.5) % 2 == 0) and Color3.fromRGB(255,0,0) or Color3.fromRGB(255,255,255)
+		if elapsed >= 7 then
+			zeroBlinkConn:Disconnect()
+			zeroBlinkConn = nil
+			label.TextColor3 = Color3.fromRGB(255,255,255)
+		end
+	end)
+end
+
 local function stopTimer()
 	if hbConn then hbConn:Disconnect() end
 	hbConn = nil
 	currentSound = nil
 	label.Text = "0:00"
+	zeroBlink()
 end
 
 local glitchSymbols = {"∆∆∆∆", "!!¡!!¡¿!", "¡!#¡!!¡¡¡", "?¿!¡?", "¿?!¿¡?", "XDD"}
@@ -93,7 +111,8 @@ local function studentGlitchAnim()
 		local elapsed = tick() - startTime
 		if elapsed >= duration then
 			conn:Disconnect()
-			update() -- vuelve al contador normal
+			hbConn = RunService.Heartbeat:Connect(update)
+			update()
 			return
 		end
 		local index = math.floor(elapsed / interval) % #glitchSymbols + 1
@@ -123,7 +142,6 @@ local function update()
 				break
 			end
 		end
-
 		if allDestroyed then
 			stopTimer()
 		end
@@ -137,6 +155,7 @@ local function update()
 	label.Text = format(rem)
 	label.Visible = true
 
+	-- Color rojo si pausa o <=26s
 	if tp > 0 and not currentSound.IsPlaying then
 		label.TextColor3 = Color3.fromRGB(255,0,0)
 	elseif rem <= 26 then
@@ -153,7 +172,6 @@ end
 local function beginTimer(s)
 	if hbConn then hbConn:Disconnect() end
 	currentSound = s
-	-- Animación glitch solo si es Student y empieza desde cero
 	if s == studentSound and s.TimePosition <= 0.05 then
 		studentGlitchAnim()
 	else
@@ -222,7 +240,6 @@ local function bind(s)
 	s.Stopped:Connect(refreshState)
 	s:GetPropertyChangedSignal("IsPlaying"):Connect(refreshState)
 	s:GetPropertyChangedSignal("TimePosition"):Connect(refreshState)
-
 	if s.IsPlaying or (s.TimePosition and s.TimePosition > 0) then
 		task.defer(refreshState)
 	end
