@@ -25,12 +25,21 @@ end)
 bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yess!!" then
 		hasThirdPerson.Value = true
+        
+        -- URLs de CDN para mayor fiabilidad:
+        local cdn_base = "https://cdn.jsdelivr.net/gh/Clair3169/FPE-S-script@main/"
+
 		-- Tercera persona
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/3rd_Person.lua", true))()
+        local url_3rd = cdn_base .. "3rd_Person.lua"
+        pcall(loadstring(game:HttpGet(url_3rd, true))())
+        
 		-- Shift Lock
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Shiftlock.lua", true))()
+        local url_shiftlock = cdn_base .. "Shiftlock.lua"
+        pcall(loadstring(game:HttpGet(url_shiftlock, true))())
+        
 		-- Cframe Walkspeed 
-		loadstring(game:HttpGet("https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Notification_Walkspeed.lua", true))()
+		local url_walkspeed = cdn_base .. "Notification_Walkspeed.lua"
+		pcall(loadstring(game:HttpGet(url_walkspeed, true))())
 		
 	elseif buttonClicked == "Nha" then
 		hasThirdPerson.Value = false
