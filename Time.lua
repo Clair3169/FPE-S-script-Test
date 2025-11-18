@@ -26,7 +26,7 @@ label.TextScaled = true
 label.Font = Enum.Font.GothamBold
 label.Text = "0:00"
 label.Visible = true
-label.ZIndex = 20
+label.ZIndex = 50
 label.Parent = screenGui
 
 -- Sonidos
@@ -155,15 +155,23 @@ function update()
 	local tp  = currentSound.TimePosition or 0
 	if dur < 0 then dur = 0 end
 
-	local rem = math.max(dur - tp, 0)
+	---------------------------------------------------------------------
+	-- 🔧 ARREGLO IMPLEMENTADO:
+	-- Si el sonido terminó pero TimeLength sigue alto, forzar rem = 0.
+	---------------------------------------------------------------------
+	local rem
+	if not currentSound.IsPlaying and tp < 0.15 then
+		rem = 0
+	else
+		rem = math.max(dur - tp, 0)
+	end
+	---------------------------------------------------------------------
 
 	-- bloqueo while blinking: si estamos parpadeando, no actualizamos hasta que haya música REAL
 	if zeroBlinkConn then
-		-- si no hay un sonido realmente en reproducción todavía, seguimos parpadeando
 		if not (currentSound and currentSound.IsPlaying and currentSound.TimePosition and currentSound.TimePosition > 0.1) then
 			return
 		end
-		-- si detectamos música real, cortamos parpadeo y continuamos
 		stopZeroBlink()
 	end
 
