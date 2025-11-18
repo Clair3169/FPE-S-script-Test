@@ -139,7 +139,7 @@ task.spawn(function()
 		if isExcluded() then
 			fadeLabel(false)
 			stopZeroBlink() 
-			ghostStart = nil -- Resetear fantasma si se excluye
+			ghostStart = nil 
 			if isGlitching then isGlitching = false end
 			currentSound = nil
 			continue
@@ -149,6 +149,15 @@ task.spawn(function()
 		
 		-- 2. Selección de Sonido
 		local best = selectBestSound()
+		
+		-- ===================================================================
+		-- CASO ESPECIAL: PRIORIDAD STUDENTS (Override)
+		-- Si Students empieza a sonar, forzamos que sea el "best" inmediatamente
+		-- Esto arregla el solapamiento con QuietHalls y activa el Glitch.
+		if studentSound and studentSound.IsPlaying and studentSound.Volume > 0 then
+			best = studentSound
+		end
+		-- ===================================================================
 		
 		-- 🛡️ PROTECCIÓN FANTASMA: Si empieza nueva música, el fantasma muere
 		if best then
@@ -168,47 +177,40 @@ task.spawn(function()
 			end
 			
 			if not foundPaused then
-				-- 👻 MODO FANTASMA (AQUÍ ESTÁ LA MAGIA)
-				-- Se activa si no hay música, no hay pausa, pero teníamos un sonido previo con duración manual
+				-- 👻 MODO FANTASMA
 				if currentSound and soundDurations[currentSound] then
-					
-					-- Iniciar el cálculo del "Hueco" (Gap) en el primer frame de silencio
 					if not ghostStart then
 						ghostStart = tick()
-						-- El hueco es: Lo que TÚ dijiste que dura - Lo que REALMENTE dura el archivo
 						local manualDur = soundDurations[currentSound]
 						local realDur = currentSound.TimeLength
 						ghostGap = math.max(manualDur - realDur, 0)
 					end
 					
-					-- Calcular tiempo restante simulado
 					local timeInGhost = tick() - ghostStart
 					local remGhost = ghostGap - timeInGhost
 					
 					if remGhost > 0 then
-						-- Aún queda tiempo fantasma, mostrarlo y saltar
 						label.Text = format(remGhost)
-						label.TextColor3 = Color3.fromRGB(255,0,0) -- Rojo (alerta)
+						label.TextColor3 = Color3.fromRGB(255,0,0)
 						stopZeroBlink()
-						continue -- ⚠️ IMPORTANTE: Salta el parpadeo de 0:00
+						continue 
 					else
-						-- Se acabó el tiempo fantasma, dejar pasar al parpadeo 0:00
 						ghostStart = nil
 					end
 				end
 				
-				-- Parpadeo 0:00 estándar (Si no hay fantasma o ya acabó)
 				if not zeroBlinkConn then
 					label.Text = "0:00"
 					startZeroBlink()
 				end
-				-- No reseteamos currentSound a nil aquí para recordar cuál fue el último para el fantasma
 				continue
 			end
 		end
 
 		-- 3. Glitch Anim
-		if best == studentSound and best.TimePosition < 0.15 and currentSound ~= studentSound then
+		-- Al forzar 'best = studentSound' arriba, esta condición se cumplirá inmediatamente
+		-- porque 'currentSound' aún será QuietHalls de la vuelta anterior.
+		if best == studentSound and best.TimePosition < 0.25 and currentSound ~= studentSound then
 			isGlitching = true
 			glitchStartTime = tick()
 			stopZeroBlink()
@@ -223,7 +225,7 @@ task.spawn(function()
 				label.Text = glitchSymbols[index]
 				label.TextColor3 = Color3.fromRGB(255,0,0)
 				label.Visible = true
-				currentSound = best
+				currentSound = best -- Actualizamos currentSound durante el glitch
 				continue 
 			end
 		end
@@ -236,7 +238,7 @@ task.spawn(function()
 		local tp = currentSound.TimePosition or 0
 		if dur < 0 then dur = 0 end
 		
-		-- 6. Arreglo visual (Si empieza, no mostrar negativo)
+		-- 6. Arreglo visual
 		local rem
 		if not currentSound.IsPlaying and tp < 0.15 then
 			rem = 0
