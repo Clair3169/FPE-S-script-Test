@@ -1,4 +1,6 @@
--- Versión avanzada: pausa, carpetas excluidas, color rojo, fade, prioridad por volumen, glitch Student y parpadeo final
+-- Versión avanzada corregida: parpadeo infinito, corte automático al iniciar música,
+-- duración real para sonidos no listados y corrección total de 0:00
+
 local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -38,8 +40,7 @@ local studentSound    = phase2Folder:WaitForChild("Student")
 
 local trackedSounds = { quietHalls, properBehavior, studentSound }
 
--- 	[quietHalls]     = (6*60)+2,
--- Duraciones personalizables
+-- Duraciones manuales opcionales
 local soundDurations = {
 	[properBehavior] = (2*60)+1,
 	[studentSound]   = (3*60)+16
@@ -53,7 +54,7 @@ local function format(sec)
 	return string.format("%d:%02d", math.floor(sec/60), math.floor(sec%60))
 end
 
--- Verifica si el personaje está en carpetas excluidas
+-- carpetas excluidas
 local function isExcluded()
 	local char = player.Character
 	if not char or not char.Parent then return false end
@@ -61,7 +62,6 @@ local function isExcluded()
 	return parentName == "Teachers" or parentName == "Alices"
 end
 
--- Fade para mostrar/ocultar label
 local function fadeLabel(show)
 	local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	if show then
@@ -75,37 +75,46 @@ local function fadeLabel(show)
 	end
 end
 
--- Parpadeo final 0:00
-local function zeroBlink()
+---------------------------------------------------------------------
+-- 🔴 PARPADEO INFINITO hasta nueva música
+---------------------------------------------------------------------
+local function startZeroBlink()
 	if zeroBlinkConn then zeroBlinkConn:Disconnect() end
-	local start = tick()
+
 	zeroBlinkConn = RunService.Heartbeat:Connect(function()
-		local elapsed = tick() - start
 		label.Visible = true
-		label.TextColor3 = (math.floor(elapsed / 0.5) % 2 == 0) and Color3.fromRGB(255,0,0) or Color3.fromRGB(255,255,255)
-		if elapsed >= 7 then
-			zeroBlinkConn:Disconnect()
-			zeroBlinkConn = nil
-			label.TextColor3 = Color3.fromRGB(255,255,255)
-		end
+		local t = tick()
+		local blink = math.floor(t / 0.5) % 2
+		label.TextColor3 = (blink == 0) and Color3.fromRGB(255,0,0) or Color3.fromRGB(255,255,255)
 	end)
 end
 
+-- cortar parpadeo al iniciar sonido nuevo
+local function stopZeroBlink()
+	if zeroBlinkConn then
+		zeroBlinkConn:Disconnect()
+		zeroBlinkConn = nil
+	end
+end
+
+---------------------------------------------------------------------
+-- STOP TIMER → NO detiene parpadeo, solo activa 0:00 y parpadeo
+---------------------------------------------------------------------
 local function stopTimer()
 	if hbConn then hbConn:Disconnect() end
 	hbConn = nil
 	currentSound = nil
+
 	label.Text = "0:00"
-	zeroBlink()
+	startZeroBlink()
 end
 
 local glitchSymbols = {"∆∆∆∆", "!!¡!!¡¿!", "¡!#¡!!¡¡¡", "?¿!¡?", "¿?!¿¡?", "XDD"}
 
--- Animación glitch para Student
 local function studentGlitchAnim()
 	local startTime = tick()
 	local duration = 4.3
-	local interval = 0.07 -- rápido
+	local interval = 0.07
 	local conn
 	conn = RunService.Heartbeat:Connect(function()
 		local elapsed = tick() - startTime
@@ -122,40 +131,56 @@ local function studentGlitchAnim()
 	end)
 end
 
-local function update()
+---------------------------------------------------------------------
+-- 🔁 UPDATE PRINCIPAL
+---------------------------------------------------------------------
+function update()
 	if isExcluded() then
-		if label.Visible then
-			fadeLabel(false)
-		end
+		if label.Visible then fadeLabel(false) end
 		return
 	else
-		if not label.Visible then
-			fadeLabel(true)
-		end
+		if not label.Visible then fadeLabel(true) end
 	end
 
 	if not currentSound or not currentSound.Parent then
 		local allDestroyed = true
 		for _, s in ipairs(trackedSounds) do
-			if s and s.Parent then
-				allDestroyed = false
-				break
-			end
+			if s and s.Parent then allDestroyed = false break end
 		end
-		if allDestroyed then
-			stopTimer()
-		end
+		if allDestroyed then stopTimer() end
 		return
 	end
 
 	local dur = soundDurations[currentSound] or currentSound.TimeLength or 0
 	local tp  = currentSound.TimePosition or 0
+	if dur < 0 then dur = 0 end
+
 	local rem = math.max(dur - tp, 0)
+
+	-- bloqueo while blinking: si estamos parpadeando, no actualizamos hasta que haya música REAL
+	if zeroBlinkConn then
+		-- si no hay un sonido realmente en reproducción todavía, seguimos parpadeando
+		if not (currentSound and currentSound.IsPlaying and currentSound.TimePosition and currentSound.TimePosition > 0.1) then
+			return
+		end
+		-- si detectamos música real, cortamos parpadeo y continuamos
+		stopZeroBlink()
+	end
+
+	-- si rem = 0 → activar parpadeo infinito
+	if rem <= 0 then
+		label.Text = "0:00"
+		startZeroBlink()
+		return
+	end
+
+	-- si hay tiempo → detener parpadeo (nuevo sonido)
+	stopZeroBlink()
 
 	label.Text = format(rem)
 	label.Visible = true
 
-	-- Color rojo si pausa o <=26s
+	-- color normal
 	if tp > 0 and not currentSound.IsPlaying then
 		label.TextColor3 = Color3.fromRGB(255,0,0)
 	elseif rem <= 26 then
@@ -163,15 +188,17 @@ local function update()
 	else
 		label.TextColor3 = Color3.fromRGB(255,255,255)
 	end
-
-	if rem <= 0 then
-		stopTimer()
-	end
 end
 
+---------------------------------------------------------------------
+-- INICIAR TEMPORIZADOR
+---------------------------------------------------------------------
 local function beginTimer(s)
+	stopZeroBlink()
 	if hbConn then hbConn:Disconnect() end
+
 	currentSound = s
+
 	if s == studentSound and s.TimePosition <= 0.05 then
 		studentGlitchAnim()
 	else
@@ -180,6 +207,9 @@ local function beginTimer(s)
 	end
 end
 
+---------------------------------------------------------------------
+-- SELECCIÓN AUTOMÁTICA POR VOLUMEN
+---------------------------------------------------------------------
 local function selectBestSound()
 	local best = nil
 	local maxVol = 0
@@ -194,16 +224,15 @@ local function selectBestSound()
 	return best
 end
 
+---------------------------------------------------------------------
+-- REFRESH PRINCIPAL
+---------------------------------------------------------------------
 local function refreshState()
 	if isExcluded() then
-		if label.Visible then
-			fadeLabel(false)
-		end
+		if label.Visible then fadeLabel(false) end
 		return
 	else
-		if not label.Visible then
-			fadeLabel(true)
-		end
+		if not label.Visible then fadeLabel(true) end
 	end
 
 	local best = selectBestSound()
@@ -214,18 +243,13 @@ local function refreshState()
 	else
 		local allDestroyed = true
 		for _, s in ipairs(trackedSounds) do
-			if s and s.Parent then
-				allDestroyed = false
-				break
-			end
+			if s and s.Parent then allDestroyed = false break end
 		end
-
 		if allDestroyed then
 			stopTimer()
 		else
 			for _, s in ipairs(trackedSounds) do
 				if s and s.Parent and s.TimePosition and s.TimePosition > 0 then
-					currentSound = s
 					beginTimer(s)
 					break
 				end
@@ -234,12 +258,16 @@ local function refreshState()
 	end
 end
 
+---------------------------------------------------------------------
+-- BIND
+---------------------------------------------------------------------
 local function bind(s)
 	s.Played:Connect(refreshState)
 	s.Paused:Connect(refreshState)
 	s.Stopped:Connect(refreshState)
 	s:GetPropertyChangedSignal("IsPlaying"):Connect(refreshState)
 	s:GetPropertyChangedSignal("TimePosition"):Connect(refreshState)
+
 	if s.IsPlaying or (s.TimePosition and s.TimePosition > 0) then
 		task.defer(refreshState)
 	end
