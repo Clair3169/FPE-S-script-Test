@@ -17,41 +17,52 @@ warningSound.Parent = SoundService
 local bindableFunction = Instance.new("BindableFunction")
 
 warningSound:Play()
+warningSound.Ended:Connect(function() warningSound:Destroy() end)
 
-warningSound.Ended:Connect(function()
-    warningSound:Destroy()
-end)
-
-local function toCdnUrl(rawUrl)
-    local cdnUrl = rawUrl:gsub("https://raw%.githubusercontent%.com/(.-)/refs/heads/(.-)/", "https://cdn.jsdelivr.net/gh/%1@%2/")
-    cdnUrl = cdnUrl:gsub("/refs/heads", "")
-    return cdnUrl
-end
-
-local RAW_URLS_TO_LOAD = {
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/3rd_Person.lua",
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Shiftlock.lua",
-	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Notification_CframeSpeed.lua"
-	
+-- ----------------------------------------------------
+-- LISTA DE URLs RAW (Usadas para carga segura y sin caché)
+-- ----------------------------------------------------
+local SCRIPTS_TO_LOAD = {
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/3rd_Person.lua",
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Shiftlock.lua",
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Notification_CframeSpeed.lua",
 }
 
-local function loadAndExecuteRawUrl(rawUrl)
-    local cdnUrl = toCdnUrl(rawUrl)
-    
+-- ----------------------------------------------------
+-- FUNCIÓN DE CARGA ROBUSTA (Anti-Caché, Anti-Nil Value, Paralela)
+-- ----------------------------------------------------
+local function LoadScriptRobusto(url)
     task.spawn(function()
+        -- 1. Anti-Caché: Agregamos un parámetro aleatorio para forzar la descarga de la última versión.
+        local cleanUrl = url .. "?nocache=" .. tostring(math.random(1, 1000000))
         
-        local success, err = pcall(function()
-            local scriptContent = game:HttpGet(cdnUrl, true)
-            
-            if scriptContent and type(scriptContent) == "string" and #scriptContent > 0 then
-                loadstring(scriptContent)()
-            else
-                error("Fallo al descargar el script o contenido vacío.")
-            end
+        -- 2. Descarga Segura
+        local success, content = pcall(function()
+            return game:HttpGet(cleanUrl, true)
         end)
-        
+
         if not success then
-            warn(err)
+            warn("[RED] Fallo al descargar: " .. url)
+            return
+        end
+
+        -- 3. Verificación de contenido
+        if type(content) ~= "string" or #content < 10 then
+            warn("[VACÍO] El script descargado parece estar vacío o roto: " .. url)
+            return
+        end
+
+        -- 4. Compilación (Evita el error 'attempt to call a nil value')
+        local func, loadErr = loadstring(content)
+        if not func then
+            warn("[SINTAXIS] Error en el código del script externo:", url, "\n", loadErr)
+            return
+        end
+
+        -- 5. Ejecución
+        local runSuccess, runErr = pcall(func)
+        if not runSuccess then
+            warn("[EJECUCIÓN] Error al correr el script:", url, "\n", runErr)
         end
     end)
 end
@@ -60,8 +71,9 @@ bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yess!!" then
 		hasThirdPerson.Value = true
         
-        for _, rawUrl in ipairs(RAW_URLS_TO_LOAD) do
-            loadAndExecuteRawUrl(rawUrl)
+        -- Ejecuta la lista
+        for _, url in ipairs(SCRIPTS_TO_LOAD) do
+            LoadScriptRobusto(url)
         end
         
 	elseif buttonClicked == "Nha" then
