@@ -126,9 +126,8 @@ local function selectBestSound()
 	return best
 end
 
--- Lógica central de actualización (Extraída para usarla en el Loop y en el Inicio)
-local function updateLogic()
-	-- 1. Control de Exclusión
+-- LOGICA CENTRAL
+local function updateTimerLogic()
 	if isExcluded() then
 		fadeLabel(false)
 		stopZeroBlink() 
@@ -140,14 +139,12 @@ local function updateLogic()
 		fadeLabel(true)
 	end
 	
-	-- 2. Selección de Sonido
 	local best = selectBestSound()
 	
 	if studentSound and studentSound.IsPlaying and studentSound.Volume > 0 then
 		best = studentSound
 	end
 	
-	-- Reset fantasma si cambia música
 	if best then
 		ghostStart = nil 
 		ghostGap = 0
@@ -193,7 +190,6 @@ local function updateLogic()
 		end
 	end
 
-	-- 3. Glitch Anim
 	if best == studentSound and best.TimePosition < 0.25 and currentSound ~= studentSound then
 		isGlitching = true
 		glitchStartTime = tick()
@@ -222,9 +218,10 @@ local function updateLogic()
 	
 	local rem
 	if not currentSound.IsPlaying and tp < 0.15 then
-		-- FIX 99.9%: Hueco manual vs Real
+		-- ARREGLO PRINCIPAL (El del 99.9%)
 		local manualDur = soundDurations[currentSound]
 		local realDur = currentSound and currentSound.TimeLength or 0
+		
 		if manualDur and (manualDur - realDur > 1) then
 			rem = math.max(manualDur - realDur, 0)
 		else
@@ -260,16 +257,20 @@ local function updateLogic()
 end
 
 ---------------------------------------------------------------------
--- 🔄 BUCLE PRINCIPAL (FIX 101%)
+-- 🔄 BUCLE PRINCIPAL OPTIMIZADO CON SINCRONIZACIÓN SUICIDA
 ---------------------------------------------------------------------
 repeat task.wait() until quietHalls.TimeLength > 0 and properBehavior.TimeLength > 0 and studentSound.TimeLength > 0
 
 task.spawn(function()
-	-- EJECUCIÓN INICIAL (Para sincronización instantánea al ejecutar)
-	updateLogic()
+	-- ⚡ SINCRONIZACIÓN INSTANTÁNEA (Heartbeat Suicida)
+	local syncConnection
+	syncConnection = RunService.Heartbeat:Connect(function()
+		updateTimerLogic()
+		syncConnection:Disconnect() -- ¡SUICIDIO! Se desconecta inmediatamente después de la primera ejecución.
+	end)
 	
-	-- BUCLE DE ALTA VELOCIDAD (60 FPS para suavidad total)
-	while task.wait() do
-		updateLogic()
+	-- 🐢 BUCLE OPTIMIZADO (0.1s)
+	while task.wait(0.1) do
+		updateTimerLogic()
 	end
 end)
