@@ -29,9 +29,10 @@ local function toCdnUrl(rawUrl)
 end
 
 local RAW_URLS_TO_LOAD = {
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/3rd_Person.lua",
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Shiftlock.lua",
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script/refs/heads/main/Notification_CframeSpeed.lua",
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/3rd_Person.lua",
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Shiftlock.lua",
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Notification_CframeSpeed.lua"
+	
 }
 
 local function loadAndExecuteRawUrl(rawUrl)
