@@ -21,7 +21,7 @@ end
 
 local RAW_URLS_TO_LOAD = {
     "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/main/Cframe_Walkspeed.lua",
-    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/main/Notification_Warning.lua",
+    "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/main/Notification_Warning.lua"
 }
 
 local function loadAndExecuteRawUrl(rawUrl)
