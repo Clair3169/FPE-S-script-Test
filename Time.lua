@@ -44,6 +44,7 @@ local trackedSounds = { quietHalls, properBehavior, studentSound }
 
 -- Duraciones manuales
 local soundDurations = {
+	[quietHalls] = (6*60)+2,
 	[properBehavior] = (2*60)+5,
 	[studentSound] = (3*60)+13
 }
