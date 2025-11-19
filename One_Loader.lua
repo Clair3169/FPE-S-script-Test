@@ -1,25 +1,16 @@
 --// LoadOnceManager.lua
 -- Coloca este script en StarterPlayerScripts o similar.
 
--- FUNCIÓN DE AYUDA para convertir URL de GitHub a URL de CDN
-local function toCdnUrl(rawUrl)
-    -- Ejemplo: Convierte 
-    -- https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Script.lua
-    -- A:
-    -- https://cdn.jsdelivr.net/gh/Clair3169/FPE-S-script-Test@main/Script.lua
+-- SERVICIOS
+local replicatedStorage = game:GetService("ReplicatedStorage")
 
-    -- Reemplaza la base de GitHub raw por la base de jsDelivr
-    local cdnUrl = rawUrl:gsub("https://raw%.githubusercontent%.com/(.-)/refs/heads/(.-)/", "https://cdn.jsdelivr.net/gh/%1@%2/")
-    
-    -- Ajuste final para tu estructura específica (eliminar 'refs/heads')
-    cdnUrl = cdnUrl:gsub("/refs/heads", "")
-    
-    return cdnUrl
-end
+-- NOMBRE DE LA MARCA PARA RECORDAR QUE YA SE EJECUTÓ
+local flagName = "HasLoadedScriptsOnce"
 
-
--- CONFIGURACIÓN (Ahora con URLs de CDN, más rápidas y estables)
--- Nota: La conversión es automática, pero las dejo aquí con la estructura CDN para claridad.
+-- ----------------------------------------------------
+-- LISTA DE URLs RAW (Tal cual aparecen en GitHub)
+-- Usamos las RAW directas + Anti-Caché para actualizaciones instantáneas.
+-- ----------------------------------------------------
 local urls_raw = {
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Welcome_Script.lua",
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Anti_Blackout.lua",
@@ -39,19 +30,46 @@ local urls_raw = {
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/NO_RAGDOLL.lua"
 }
 
--- Convertir todas las URLs a CDN
-local urls = {}
-for _, rawUrl in ipairs(urls_raw) do
-    table.insert(urls, toCdnUrl(rawUrl))
+-- ----------------------------------------------------
+-- FUNCIÓN DE CARGA ROBUSTA (Anti-Caché, Anti-Nil Value, Paralela)
+-- ----------------------------------------------------
+local function LoadScriptRobusto(url)
+    task.spawn(function()
+        -- 1. Anti-Caché: Agregamos un parámetro aleatorio
+        local cleanUrl = url .. "?nocache=" .. tostring(math.random(1, 1000000))
+        
+        -- 2. Descarga Segura
+        local success, content = pcall(function()
+            return game:HttpGet(cleanUrl, true)
+        end)
+
+        if not success then
+            warn("❌ [RED] Fallo al descargar: " .. url)
+            return
+        end
+
+        -- 3. Verificación de contenido
+        if type(content) ~= "string" or #content < 10 then
+            warn("⚠️ [VACÍO] El script descargado parece estar vacío o roto: " .. url)
+            return
+        end
+
+        -- 4. Compilación (Evita el error 'attempt to call a nil value')
+        local func, loadErr = loadstring(content)
+        if not func then
+            warn("❌ [SINTAXIS] Error en el código del script externo:", url, "\n", loadErr)
+            return
+        end
+
+        -- 5. Ejecución
+        local runSuccess, runErr = pcall(func)
+        if not runSuccess then
+            warn("⚠️ [EJECUCIÓN] Error al correr el script:", url, "\n", runErr)
+        else
+            -- print("✅ Cargado correctamente: " .. url) -- Descomenta si quieres spam en la consola
+        end
+    end)
 end
-
-
--- NOMBRE DE LA MARCA PARA RECORDAR QUE YA SE EJECUTÓ
-local flagName = "HasLoadedScriptsOnce"
-
--- SERVICIOS
-local player = game.Players.LocalPlayer
-local replicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Función para marcar que ya se ejecutó
 local function setExecutedFlag()
@@ -66,31 +84,21 @@ local function hasExecuted()
 	return replicatedStorage:FindFirstChild(flagName) ~= nil
 end
 
--- Función para cargar scripts desde URL (solo si no se ha ejecutado antes)
+-- Función Principal: Cargar una sola vez
 local function loadOnce()
 	if hasExecuted() then
-		warn("⚠️ El script ya esta cargado.")
+		warn("⚠️ Los scripts ya se han cargado anteriormente.")
 		return
 	end
 
-	for _, url in ipairs(urls) do
-		-- Usamos task.spawn para cargar scripts en paralelo (más rápido)
-		task.spawn(function()
-			-- Usamos la sintaxis probada que funciona en tu entorno: pcall(loadstring(game:HttpGet(...)))
-			local fullCode = string.format('pcall(loadstring(game:HttpGet("%s", true))())', url)
-
-			local success, err = pcall(function()
-				loadstring(fullCode)()
-			end)
-			
-			if not success then
-				warn("❌ Error al cargar/ejecutar el script:", url, "\n", err)
-			end
-		end)
+    -- Iteramos sobre la lista y aplicamos la carga robusta a cada URL
+	for _, url in ipairs(urls_raw) do
+		LoadScriptRobusto(url)
 	end
 
 	setExecutedFlag()
+    print("🚀 Todos los procesos de carga iniciados.")
 end
 
--- Ejecutar una vez
+-- Ejecutar
 loadOnce()
