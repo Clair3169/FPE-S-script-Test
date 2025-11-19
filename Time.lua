@@ -42,7 +42,6 @@ local studentSound = phase2Folder:WaitForChild("Student")
 
 local trackedSounds = { quietHalls, properBehavior, studentSound }
 
--- Duraciones manuales
 local soundDurations = {
 	[quietHalls] = (6*60)+11,
 	[properBehavior] = (2*60)+5,
@@ -59,7 +58,6 @@ local isGlitching = false
 local glitchStartTime = 0
 local glitchSymbols = {"∆∆∆∆", "!!¡!!¡¿!", "¡!#¡!!¡¡¡", "?¿!¡?", "¿?!¿¡?", "XDD"}
 
--- VARIABLES PARA LA FUNCIÓN FANTASMA
 local ghostStart = nil
 local ghostGap = 0
 
@@ -128,151 +126,150 @@ local function selectBestSound()
 	return best
 end
 
+-- Lógica central de actualización (Extraída para usarla en el Loop y en el Inicio)
+local function updateLogic()
+	-- 1. Control de Exclusión
+	if isExcluded() then
+		fadeLabel(false)
+		stopZeroBlink() 
+		ghostStart = nil 
+		if isGlitching then isGlitching = false end
+		currentSound = nil
+		return
+	else
+		fadeLabel(true)
+	end
+	
+	-- 2. Selección de Sonido
+	local best = selectBestSound()
+	
+	if studentSound and studentSound.IsPlaying and studentSound.Volume > 0 then
+		best = studentSound
+	end
+	
+	-- Reset fantasma si cambia música
+	if best then
+		ghostStart = nil 
+		ghostGap = 0
+	end
+
+	if not best then
+		local foundPaused = false
+		for _, s in ipairs(trackedSounds) do
+			if s and s.Parent and s.TimePosition and s.TimePosition > 0 then
+				best = s 
+				foundPaused = true
+				break
+			end
+		end
+		
+		if not foundPaused then
+			if currentSound and soundDurations[currentSound] then
+				if not ghostStart then
+					ghostStart = tick()
+					local manualDur = soundDurations[currentSound]
+					local realDur = currentSound.TimeLength
+					ghostGap = math.max(manualDur - realDur, 0)
+				end
+				
+				local timeInGhost = tick() - ghostStart
+				local remGhost = ghostGap - timeInGhost
+				
+				if remGhost > 0 then
+					label.Text = format(remGhost)
+					label.TextColor3 = Color3.fromRGB(255,0,0)
+					stopZeroBlink()
+					return 
+				else
+					ghostStart = nil
+				end
+			end
+			
+			if not zeroBlinkConn then
+				label.Text = "0:00"
+				startZeroBlink()
+			end
+			return
+		end
+	end
+
+	-- 3. Glitch Anim
+	if best == studentSound and best.TimePosition < 0.25 and currentSound ~= studentSound then
+		isGlitching = true
+		glitchStartTime = tick()
+		stopZeroBlink()
+	end
+	
+	if isGlitching then
+		local elapsed = tick() - glitchStartTime
+		if elapsed >= 4.3 then
+			isGlitching = false
+		else
+			local index = math.floor(elapsed / 0.07) % #glitchSymbols + 1
+			label.Text = glitchSymbols[index]
+			label.TextColor3 = Color3.fromRGB(255,0,0)
+			label.Visible = true
+			currentSound = best
+			return 
+		end
+	end
+	
+	currentSound = best
+	
+	local dur = soundDurations[currentSound] or currentSound.TimeLength or 0
+	local tp = currentSound.TimePosition or 0
+	if dur < 0 then dur = 0 end
+	
+	local rem
+	if not currentSound.IsPlaying and tp < 0.15 then
+		-- FIX 99.9%: Hueco manual vs Real
+		local manualDur = soundDurations[currentSound]
+		local realDur = currentSound and currentSound.TimeLength or 0
+		if manualDur and (manualDur - realDur > 1) then
+			rem = math.max(manualDur - realDur, 0)
+		else
+			rem = 0
+		end
+	else
+		rem = math.max(dur - tp, 0)
+	end
+	
+	if zeroBlinkConn then
+		if rem > 0 and currentSound.IsPlaying then
+			stopZeroBlink()
+		else
+			return 
+		end
+	end
+	
+	if rem <= 0 then
+		label.Text = "0:00"
+		startZeroBlink()
+		return
+	end
+	
+	label.Text = format(rem)
+	
+	if tp > 0 and not currentSound.IsPlaying then
+		label.TextColor3 = Color3.fromRGB(255,0,0)
+	elseif rem <= 26 then
+		label.TextColor3 = Color3.fromRGB(255,0,0)
+	else
+		label.TextColor3 = Color3.fromRGB(255,255,255)
+	end
+end
+
 ---------------------------------------------------------------------
--- 🔄 BUCLE PRINCIPAL
+-- 🔄 BUCLE PRINCIPAL (FIX 101%)
 ---------------------------------------------------------------------
 repeat task.wait() until quietHalls.TimeLength > 0 and properBehavior.TimeLength > 0 and studentSound.TimeLength > 0
 
 task.spawn(function()
-	while task.wait(0.1) do
-		
-		-- 1. Control de Exclusión
-		if isExcluded() then
-			fadeLabel(false)
-			stopZeroBlink() 
-			ghostStart = nil 
-			if isGlitching then isGlitching = false end
-			currentSound = nil
-			continue
-		else
-			fadeLabel(true)
-		end
-		
-		-- 2. Selección de Sonido
-		local best = selectBestSound()
-		
-		-- ===================================================================
-		-- CASO ESPECIAL: PRIORIDAD STUDENTS (Override)
-		-- Si Students empieza a sonar, forzamos que sea el "best" inmediatamente
-		-- Esto arregla el solapamiento con QuietHalls y activa el Glitch.
-		if studentSound and studentSound.IsPlaying and studentSound.Volume > 0 then
-			best = studentSound
-		end
-		-- ===================================================================
-		
-		-- 🛡️ PROTECCIÓN FANTASMA: Si empieza nueva música, el fantasma muere
-		if best then
-			ghostStart = nil 
-			ghostGap = 0
-		end
-
-		if not best then
-			-- Fallback: Sonidos pausados
-			local foundPaused = false
-			for _, s in ipairs(trackedSounds) do
-				if s and s.Parent and s.TimePosition and s.TimePosition > 0 then
-					best = s 
-					foundPaused = true
-					break
-				end
-			end
-			
-			if not foundPaused then
-				-- 👻 MODO FANTASMA
-				if currentSound and soundDurations[currentSound] then
-					if not ghostStart then
-						ghostStart = tick()
-						local manualDur = soundDurations[currentSound]
-						local realDur = currentSound.TimeLength
-						ghostGap = math.max(manualDur - realDur, 0)
-					end
-					
-					local timeInGhost = tick() - ghostStart
-					local remGhost = ghostGap - timeInGhost
-					
-					if remGhost > 0 then
-						label.Text = format(remGhost)
-						label.TextColor3 = Color3.fromRGB(255,0,0)
-						stopZeroBlink()
-						continue 
-					else
-						ghostStart = nil
-					end
-				end
-				
-				if not zeroBlinkConn then
-					label.Text = "0:00"
-					startZeroBlink()
-				end
-				continue
-			end
-		end
-
-		-- 3. Glitch Anim
-		-- Al forzar 'best = studentSound' arriba, esta condición se cumplirá inmediatamente
-		-- porque 'currentSound' aún será QuietHalls de la vuelta anterior.
-		if best == studentSound and best.TimePosition < 0.25 and currentSound ~= studentSound then
-			isGlitching = true
-			glitchStartTime = tick()
-			stopZeroBlink()
-		end
-		
-		if isGlitching then
-			local elapsed = tick() - glitchStartTime
-			if elapsed >= 4.3 then
-				isGlitching = false
-			else
-				local index = math.floor(elapsed / 0.07) % #glitchSymbols + 1
-				label.Text = glitchSymbols[index]
-				label.TextColor3 = Color3.fromRGB(255,0,0)
-				label.Visible = true
-				currentSound = best -- Actualizamos currentSound durante el glitch
-				continue 
-			end
-		end
-		
-		-- 4. Actualizar estado
-		currentSound = best
-		
-		-- 5. Cálculo Normal
-		local dur = soundDurations[currentSound] or currentSound.TimeLength or 0
-		local tp = currentSound.TimePosition or 0
-		if dur < 0 then dur = 0 end
-		
-		-- 6. Arreglo visual
-		local rem
-		if not currentSound.IsPlaying and tp < 0.15 then
-			rem = 0
-		else
-			rem = math.max(dur - tp, 0)
-		end
-		
-		-- 7. Parpadeo vs Música
-		if zeroBlinkConn then
-			if rem > 0 and currentSound.IsPlaying then
-				stopZeroBlink()
-			else
-				continue 
-			end
-		end
-		
-		-- 8. Fin de tiempo normal
-		if rem <= 0 then
-			label.Text = "0:00"
-			startZeroBlink()
-			continue
-		end
-		
-		-- 9. Display
-		label.Text = format(rem)
-		
-		-- 10. Colores
-		if tp > 0 and not currentSound.IsPlaying then
-			label.TextColor3 = Color3.fromRGB(255,0,0)
-		elseif rem <= 26 then
-			label.TextColor3 = Color3.fromRGB(255,0,0)
-		else
-			label.TextColor3 = Color3.fromRGB(255,255,255)
-		end
+	-- EJECUCIÓN INICIAL (Para sincronización instantánea al ejecutar)
+	updateLogic()
+	
+	-- BUCLE DE ALTA VELOCIDAD (60 FPS para suavidad total)
+	while task.wait() do
+		updateLogic()
 	end
 end)
