@@ -14,46 +14,65 @@ warningSound.Ended:Connect(function()
     warningSound:Destroy()
 end)
 
-local function toCdnUrl(simpleUrl)
-    local cdnUrl = simpleUrl:gsub("https://raw%.githubusercontent%.com/(.-)/main/(.-)", "https://cdn.jsdelivr.net/gh/%1@main/%2")
-    return cdnUrl
-end
-
+-- ----------------------------------------------------
+-- LISTA DE URLs RAW (Tal cual aparecen en GitHub)
+-- ----------------------------------------------------
 local RAW_URLS_TO_LOAD = {
     "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/main/Cframe_Walkspeed.lua",
     "https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/main/Notification_Warning.lua"
 }
 
-local function loadAndExecuteRawUrl(rawUrl)
-    local cdnUrl = toCdnUrl(rawUrl)
-    
+-- ----------------------------------------------------
+-- FUNCIÓN DE CARGA ROBUSTA (Anti-Caché, Anti-Nil Value, Paralela)
+-- ----------------------------------------------------
+local function LoadScriptRobusto(url)
     task.spawn(function()
+        -- 1. Anti-Caché: Agregamos un número aleatorio para forzar la versión más nueva
+        local cleanUrl = url .. "?nocache=" .. tostring(math.random(1, 1000000))
         
-        local success, err = pcall(function()
-            local scriptContent = game:HttpGet(cdnUrl, true)
-            
-            if scriptContent and type(scriptContent) == "string" and #scriptContent > 0 then
-                loadstring(scriptContent)() 
-            else
-                error("Fallo al descargar el script o contenido vacío.")
-            end
+        -- 2. Descarga Segura
+        local success, content = pcall(function()
+            return game:HttpGet(cleanUrl, true)
         end)
-        
+
         if not success then
-            warn(err)
+            warn("❌ [RED] Fallo al descargar: " .. url)
+            return
+        end
+
+        -- 3. Verificación de contenido (Evita ejecutar cosas vacías)
+        if type(content) ~= "string" or #content < 10 then
+            warn("⚠️ [VACÍO] El script descargado parece estar vacío o roto: " .. url)
+            return
+        end
+
+        -- 4. Compilación (Evita el error 'attempt to call a nil value')
+        local func, loadErr = loadstring(content)
+        if not func then
+            warn("❌ [SINTAXIS] Error en el código del script externo:", url, "\n", loadErr)
+            return
+        end
+
+        -- 5. Ejecución
+        local runSuccess, runErr = pcall(func)
+        if not runSuccess then
+            warn("⚠️ [EJECUCIÓN] Error al correr el script:", url, "\n", runErr)
+        else
+           -- print("✅ Cargado correctamente: " .. url)
         end
     end)
 end
 
-
 bindableFunction.OnInvoke = function(buttonClicked)
 	if buttonClicked == "Yes" then
         
+        -- Carga robusta para cada URL en la lista
         for _, rawUrl in ipairs(RAW_URLS_TO_LOAD) do
-            loadAndExecuteRawUrl(rawUrl)
+            LoadScriptRobusto(rawUrl)
         end
         
 	elseif buttonClicked == "No" then
+        -- No hace nada
 	end
 end
 
