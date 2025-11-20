@@ -47,5 +47,3 @@ end
 
 -- 5. Iniciar la cadena
 siguienteColor()
-
-print("Plataforma Neón creada y animada con TweenService (Sin bucles).")
