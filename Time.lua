@@ -26,7 +26,7 @@ label.TextScaled = true
 label.Font = Enum.Font.GothamBold
 label.Text = "0:00"
 label.Visible = true
-label.ZIndex = 100
+label.ZIndex = 500
 label.Parent = screenGui
 
 ---------------------------------------------------------------------
