@@ -1,4 +1,5 @@
 -- LocalScript
+repeat task.wait() until game:IsLoaded()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
