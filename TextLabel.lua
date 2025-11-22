@@ -52,8 +52,8 @@ updatePlayerCount()
 -- 🔹 2. Ping Monitor (Recursión Programada - CERO BUCLES)
 -- ============================================================
 -- Posición: 20 px arriba (Justo encima de Players)
-local pingLabel = createLabel("Ping: 0", Color3.fromRGB(255, 255, 255), UDim2.new(0, 2, 1, -20))
-pingLabel.BackgroundTransparency = 0
+local pingLabel = createLabel("Ping: 0", Color3.fromRGB(255, 255, 255), UDim2.new(0, 2, 1, -15))
+pingLabel.TextTransparency = 0
 
 -- Referencia directa al valor de Ping (para no buscarlo cada vez)
 local performanceStats = stats:WaitForChild("Network"):WaitForChild("ServerStatsItem"):WaitForChild("Data Ping")
