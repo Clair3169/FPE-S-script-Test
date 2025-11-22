@@ -1,3 +1,6 @@
+-- esperamos hasta que este cargado el juego
+repeat task.wait() until game:IsLoaded()
+
 local player = game.Players.LocalPlayer
 local workspace = game.Workspace
 local TweenService = game:GetService("TweenService")
