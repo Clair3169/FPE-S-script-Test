@@ -23,7 +23,7 @@ local function createLabel(text, color, position)
 	label.BorderSizePixel = 0
 	label.Text = text
 	label.TextColor3 = color
-	label.TextTransparency = 0.2
+	label.TextTransparency = 0.5
 	label.TextScaled = true
 	label.Font = Enum.Font.SourceSansBold
 	label.TextStrokeTransparency = 1
@@ -80,7 +80,7 @@ local function updatePingRecursive()
 	-- ✨ MAGIA DE OPTIMIZACIÓN:
 	-- En lugar de un bucle, programamos la próxima ejecución para dentro de 1 segundo.
 	-- El script muere aquí y renace en 1s. Costo de CPU: Nulo.
-	task.delay(1.5, updatePingRecursive)
+	task.delay(1.7, updatePingRecursive)
 end
 
 -- Iniciar la cadena recursiva
