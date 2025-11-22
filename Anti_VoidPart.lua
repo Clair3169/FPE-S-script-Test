@@ -28,7 +28,7 @@ local coloresRainbow = {
 
 -- 3. Configuración de la animación (Info)
 -- Tiempo: 2 segundos para pasar de un color a otro
-local tweenInfo = TweenInfo.new(4, Enum.EasingStyle.Linear) 
+local tweenInfo = TweenInfo.new(8, Enum.EasingStyle.Linear) 
 
 -- 4. Función recursiva para cambiar el color
 local colorActual = 0
