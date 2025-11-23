@@ -1,5 +1,6 @@
--- LocalScript
-
+--============================================================--
+-- CONFIG
+--============================================================--
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,100 +8,124 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local remoteEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
 
--- CARPETAS
 local teachersFolder = Workspace:WaitForChild("Teachers")
-local alicesFolder = Workspace:WaitForChild("Alices")
+local alicesFolder   = Workspace:WaitForChild("Alices")
 
--- CONFIGURACIÓN
-local RANGE = 15
+local RANGE = 13
+local args  = { { ["^"] = { { n = 0 } } }, {} }
 
--- TABLA PRE-CARGADA (Velocidad Raw)
-local args = { { ["^"] = { { n = 0 } } }, {} }
-
--- Variables del personaje local
+--============================================================--
+-- PERSONAJE
+--============================================================--
 local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
+local rootPart  = character:WaitForChild("HumanoidRootPart")
 
--- 1. ACTUALIZAR PERSONAJE
-player.CharacterAdded:Connect(function(newCharacter)
-	character = newCharacter
-	rootPart = newCharacter:WaitForChild("HumanoidRootPart")
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	rootPart = newChar:WaitForChild("HumanoidRootPart")
 end)
 
--- 2. FUNCIÓN DE DISPARO (INSTANTÁNEO)
+--============================================================--
+-- EQUIPOS
+--============================================================--
+
+local function getTeamFolder(model)
+	local parent = model and model.Parent
+	if parent == teachersFolder then return "Teacher" end
+	if parent == alicesFolder   then return "Alice" end
+	return "None"
+end
+
+local function isFriendlyHit(attackerModel)
+	local myTeam       = getTeamFolder(character)
+	local attackerTeam = getTeamFolder(attackerModel)
+	return myTeam == attackerTeam
+end
+
+--============================================================--
+-- CORE
+--============================================================--
+
 local function executeBlock()
 	remoteEvent:FireServer(unpack(args))
 end
 
--- 3. VERIFICACIÓN DE EQUIPO Y DISTANCIA
-local function checkAndBlock(soundPart)
-	if not rootPart or not rootPart.Parent then return end
-	
-	local attackerModel = soundPart.Parent
-	if not attackerModel then return end
-	
-	-- A. Team Check (Evitar Fuego Amigo)
-	local myTeam = character.Parent
-	local attackerTeam = attackerModel.Parent
-	
-	if myTeam == attackerTeam then return end -- Somos del mismo equipo
-	
-	-- B. Distancia Check
-	local distance = (rootPart.Position - soundPart.Position).Magnitude
-	if distance <= RANGE then
+local function checkAndBlock(parentPart)
+	if not rootPart or not parentPart then return end
+
+	local model = parentPart.Parent
+	if not model then return end
+
+	if isFriendlyHit(model) then
+		return
+	end
+
+	if (rootPart.Position - parentPart.Position).Magnitude <= RANGE then
 		executeBlock()
 	end
 end
 
--- ==========================================================================
--- LÓGICA TEACHERS ("SwingSFX") -> USANDO .Played + TimePosition (NO .Playing)
--- ==========================================================================
-local function monitorTeacherSound(sound)
-	if sound.Name ~= "SwingSFX" or not sound:IsA("Sound") then return end
+--============================================================--
+-- HANDLER SUPREMO ESTABLE
+--============================================================--
 
-	-- MÉTODO 1: Evento Nativo .Played (Más rápido que PropertyChangedSignal)
-	sound.Played:Connect(function()
-		checkAndBlock(sound.Parent)
+local function attachUltraFastHooks(sound)
+	if not sound:IsA("Sound") then return end
+
+	local name = sound.Name
+	local isAtk = (name == "SwingSFX" or name == "Swing")
+	if not isAtk then return end
+
+	-- Evitar duplicar conexiones
+	if sound:FindFirstChild("AntiDup") then return end
+	Instance.new("BoolValue", sound).Name = "AntiDup"
+
+	------------------------------------------------------------
+	-- 0. Si aparece sin Parent aún, esperamos su primer Parent real
+	------------------------------------------------------------
+	if not sound.Parent then
+		sound.AncestryChanged:Connect(function(_, parent)
+			if parent and sound.Parent then
+				checkAndBlock(sound.Parent)
+			end
+		end)
+		return
+	end
+
+	------------------------------------------------------------
+	-- 1. Spawn detection (primer frame con parent)
+	------------------------------------------------------------
+	checkAndBlock(sound.Parent)
+
+	------------------------------------------------------------
+	-- 2. AncestryChanged → el sonido se reasigna de nil → brazo
+	------------------------------------------------------------
+	sound.AncestryChanged:Connect(function(_, parent)
+		if parent and sound.Parent then
+			checkAndBlock(sound.Parent)
+		end
 	end)
 
-	-- MÉTODO 2: Vigilancia de TimePosition (Para combos rápidos donde Playing se queda pegado)
-	sound:GetPropertyChangedSignal("TimePosition"):Connect(function()
-		if sound.TimePosition == 0 and sound.Playing then
+	------------------------------------------------------------
+	-- 3. Played (solo como respaldo)
+	------------------------------------------------------------
+	sound.Played:Connect(function()
+		if sound.Parent then
 			checkAndBlock(sound.Parent)
 		end
 	end)
 end
 
-local function monitorTeacher(teacherModel)
-	-- 1. Conectar sonidos existentes
-	for _, obj in pairs(teacherModel:GetDescendants()) do
-		monitorTeacherSound(obj)
+--============================================================--
+-- MONITOREO
+--============================================================--
+
+local function monitorFolder(folder)
+	folder.DescendantAdded:Connect(attachUltraFastHooks)
+	for _, d in ipairs(folder:GetDescendants()) do
+		attachUltraFastHooks(d)
 	end
-	-- 2. Conectar sonidos nuevos (si aparecen)
-	teacherModel.DescendantAdded:Connect(monitorTeacherSound)
 end
 
--- ==========================================================================
--- LÓGICA ALICES ("Swing") -> USANDO CREACIÓN (PRE-FIRE)
--- ==========================================================================
-local function monitorAlice(aliceModel)
-	-- PRIORIDAD: Disparo por creación (Lo más rápido para sonidos spawneados)
-	aliceModel.DescendantAdded:Connect(function(obj)
-		if obj:IsA("Sound") and obj.Name == "Swing" then
-			-- ¡DISPARO RAW! (Justo al nacer el objeto)
-			checkAndBlock(obj.Parent)
-		end
-	end)
-end
-
--- ==========================================================================
--- INICIALIZACIÓN
--- ==========================================================================
-
--- A. TEACHERS
-for _, child in pairs(teachersFolder:GetChildren()) do monitorTeacher(child) end
-teachersFolder.ChildAdded:Connect(monitorTeacher)
-
--- B. ALICES
-for _, child in pairs(alicesFolder:GetChildren()) do monitorAlice(child) end
-alicesFolder.ChildAdded:Connect(monitorAlice)
+monitorFolder(teachersFolder)
+monitorFolder(alicesFolder)
