@@ -12,7 +12,7 @@ local teachersFolder = Workspace:WaitForChild("Teachers")
 local alicesFolder = Workspace:WaitForChild("Alices")
 
 -- CONFIGURACIÓN
-local RANGE = 11
+local RANGE = 15
 
 -- TABLA PRE-CARGADA (Velocidad Raw)
 local args = { { ["^"] = { { n = 0 } } }, {} }
