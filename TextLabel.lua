@@ -69,7 +69,7 @@ local function updatePingRecursive()
 	elseif pingInt < 100 then
 		pingLabel.TextColor3 = Color3.fromRGB(0, 255, 0) -- Bien 
 	elseif pingInt < 250 then
-		pingLabel.TextColor3 = Color3.fromRGB(247, 241, 141) -- Medio
+		pingLabel.TextColor3 = Color3.fromRGB(232, 171, 45) -- Medio
 	else
 		pingLabel.TextColor3 = Color3.fromRGB(255, 0, 0) -- Pesimo
 	end
