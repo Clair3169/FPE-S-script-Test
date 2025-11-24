@@ -23,7 +23,7 @@ local function createLabel(text, color, position)
 	label.BorderSizePixel = 0
 	label.Text = text
 	label.TextColor3 = color
-	label.TextTransparency = 0.5
+	label.TextTransparency = 0.2
 	label.TextScaled = true
 	label.Font = Enum.Font.SourceSansBold
 	label.TextStrokeTransparency = 1
@@ -37,7 +37,7 @@ end
 -- 🔹 1. Contador de Jugadores (Evento Nativo)
 -- ============================================================
 -- Posición: Base (0 px desde abajo)
-local playerCountLabel = createLabel("Players: 0", Color3.fromRGB(0, 255, 0), UDim2.new(0, 2, 1, 0))
+local playerCountLabel = createLabel("Players: 0", Color3.fromRGB(0, 255, 0), UDim2.new(0, 2, 1, -40))
 
 local function updatePlayerCount()
 	playerCountLabel.Text = "Players: " .. #players:GetPlayers()
@@ -52,8 +52,8 @@ updatePlayerCount()
 -- 🔹 2. Ping Monitor (Recursión Programada - CERO BUCLES)
 -- ============================================================
 -- Posición: 20 px arriba (Justo encima de Players)
-local pingLabel = createLabel("Ping: 0", Color3.fromRGB(255, 255, 255), UDim2.new(0, 2, 1, -15))
-pingLabel.TextTransparency = 0.3
+local pingLabel = createLabel("Ping: 0", Color3.fromRGB(255, 255, 255), UDim2.new(0, 2, 1, -55))
+pingLabel.TextTransparency = 0.2
 
 -- Referencia directa al valor de Ping (para no buscarlo cada vez)
 local performanceStats = stats:WaitForChild("Network"):WaitForChild("ServerStatsItem"):WaitForChild("Data Ping")
