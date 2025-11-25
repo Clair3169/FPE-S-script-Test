@@ -4,23 +4,26 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local remoteEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
 
 local teachersFolder = Workspace:WaitForChild("Teachers")
 local alicesFolder   = Workspace:WaitForChild("Alices")
-local studentsFolder = Workspace:WaitForChild("Students") -- NUEVO
+local studentsFolder = Workspace:WaitForChild("Students")
 
 local RANGE = 16
+local PREDICTION_BUFFER = 2
+local TRUE_RANGE = RANGE + PREDICTION_BUFFER
+
 local ARGS  = { { ["^"] = { { n = 0 } } }, {} }
 
 local myRoot = nil
 local myTeam = "None"
--- Valores posibles: Teachers / Alices / Students / None
 
 --============================================================--
--- FUNCIÓN: DETECTAR EQUIPO DEL LOCALPLAYER EN TIEMPO REAL
+-- DETECTAR EQUIPO DEL LOCALPLAYER EN TIEMPO REAL
 --============================================================--
 local function updateTeamFromParent(parent)
 	if parent == teachersFolder then
@@ -45,9 +48,6 @@ local function detectLocalTeam()
 	myRoot = char:FindFirstChild("HumanoidRootPart")
 	updateTeamFromParent(char.Parent)
 
-	-- IMPORTANTÍSIMO:
-	-- Si tu personaje cambia de carpeta (Teachers/Alices/Students/Workspace/etc),
-	-- esto lo detecta al instante sin bucles.
 	char:GetPropertyChangedSignal("Parent"):Connect(function()
 		updateTeamFromParent(char.Parent)
 	end)
@@ -66,22 +66,36 @@ local function shouldBlock(attackerFolder)
 	if myTeam == "Alices" then
 		return attackerFolder == teachersFolder
 	end
-
-	-- Students o None → bloquear todos
 	return true
 end
 
 --============================================================--
--- NÚCLEO: BLOQUEO INSTANTÁNEO
+-- BLOQUEO INSTANTÁNEO
 --============================================================--
 local function tryBlock()
 	remoteEvent:FireServer(unpack(ARGS))
 end
 
+--============================================================--
+-- PROXIMIDAD + (3) DOBLE VALIDACIÓN
+--============================================================--
 local function checkProximity(enemyPart)
 	if not myRoot then return end
-	if (myRoot.Position - enemyPart.Position).Magnitude <= RANGE then
-		tryBlock()
+
+	local dist = (myRoot.Position - enemyPart.Position).Magnitude
+	if dist <= TRUE_RANGE then
+
+		local attackerHRP = enemyPart.Parent:FindFirstChild("HumanoidRootPart")
+		if attackerHRP then
+			local vel = attackerHRP.Velocity.Magnitude
+
+			-- (3) Mejora: validar movimiento agresivo
+			if vel > 10 then
+				tryBlock()
+			end
+		else
+			tryBlock()
+		end
 	end
 end
 
@@ -92,11 +106,11 @@ local function getAttackerTeam(model)
 	local parent = model.Parent
 	if parent == teachersFolder then return teachersFolder end
 	if parent == alicesFolder then return alicesFolder end
-	return nil -- Students y otros = enemigo neutral → se bloquea siempre
+	return nil
 end
 
 --============================================================--
--- HANDLER DEL ATAQUE (FRAME 0)
+-- HANDLER DEL ATAQUE (SONIDO) CON 4 MEJORAS
 --============================================================--
 local function fastHook(sound)
 	if not sound:IsA("Sound") then return end
@@ -115,14 +129,21 @@ local function fastHook(sound)
 
 			if attackerTeam then
 				if shouldBlock(attackerTeam) then
+
+					-- (2) MEJORA: anticipación sonora → bloqueo inmediato
+					tryBlock()
+
+					-- rango mejorado
 					checkProximity(p)
 				end
 			else
-				-- No está en Teachers ni Alices → enemigo neutral
+				-- Enemigo neutral (Students u otro)
+				tryBlock()
 				checkProximity(p)
 			end
 		end
 
+		-- Eventos sincronizados al frame 0
 		sound.Played:Connect(trigger)
 		if sound.Playing then trigger() end
 
@@ -133,7 +154,7 @@ local function fastHook(sound)
 end
 
 --============================================================--
--- MONITOREO EN TIEMPO REAL (SIN BUCLES)
+-- MONITOREO EN TIEMPO REAL
 --============================================================--
 local function startMonitoring(folder)
 	for _, d in ipairs(folder:GetDescendants()) do
@@ -144,3 +165,4 @@ end
 
 startMonitoring(teachersFolder)
 startMonitoring(alicesFolder)
+startMonitoring(studentsFolder)
