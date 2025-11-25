@@ -1,5 +1,5 @@
 --============================================================--
--- CONFIG
+-- CONFIGURACIÓN
 --============================================================--
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -10,122 +10,137 @@ local remoteEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
 
 local teachersFolder = Workspace:WaitForChild("Teachers")
 local alicesFolder   = Workspace:WaitForChild("Alices")
+local studentsFolder = Workspace:WaitForChild("Students") -- NUEVO
 
-local RANGE = 13
-local args  = { { ["^"] = { { n = 0 } } }, {} }
+local RANGE = 16
+local ARGS  = { { ["^"] = { { n = 0 } } }, {} }
 
---============================================================--
--- PERSONAJE
---============================================================--
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart  = character:WaitForChild("HumanoidRootPart")
-
-player.CharacterAdded:Connect(function(newChar)
-	character = newChar
-	rootPart = newChar:WaitForChild("HumanoidRootPart")
-end)
+local myRoot = nil
+local myTeam = "None"
+-- Valores posibles: Teachers / Alices / Students / None
 
 --============================================================--
--- EQUIPOS
+-- FUNCIÓN: DETECTAR EQUIPO DEL LOCALPLAYER EN TIEMPO REAL
 --============================================================--
-
-local function getTeamFolder(model)
-	local parent = model and model.Parent
-	if parent == teachersFolder then return "Teacher" end
-	if parent == alicesFolder   then return "Alice" end
-	return "None"
+local function updateTeamFromParent(parent)
+	if parent == teachersFolder then
+		myTeam = "Teachers"
+	elseif parent == alicesFolder then
+		myTeam = "Alices"
+	elseif parent == studentsFolder then
+		myTeam = "Students"
+	else
+		myTeam = "None"
+	end
 end
 
-local function isFriendlyHit(attackerModel)
-	local myTeam       = getTeamFolder(character)
-	local attackerTeam = getTeamFolder(attackerModel)
-	return myTeam == attackerTeam
-end
-
---============================================================--
--- CORE
---============================================================--
-
-local function executeBlock()
-	remoteEvent:FireServer(unpack(args))
-end
-
-local function checkAndBlock(parentPart)
-	if not rootPart or not parentPart then return end
-
-	local model = parentPart.Parent
-	if not model then return end
-
-	if isFriendlyHit(model) then
+local function detectLocalTeam()
+	local char = player.Character
+	if not char then
+		myRoot = nil
+		myTeam = "None"
 		return
 	end
 
-	if (rootPart.Position - parentPart.Position).Magnitude <= RANGE then
-		executeBlock()
+	myRoot = char:FindFirstChild("HumanoidRootPart")
+	updateTeamFromParent(char.Parent)
+
+	-- IMPORTANTÍSIMO:
+	-- Si tu personaje cambia de carpeta (Teachers/Alices/Students/Workspace/etc),
+	-- esto lo detecta al instante sin bucles.
+	char:GetPropertyChangedSignal("Parent"):Connect(function()
+		updateTeamFromParent(char.Parent)
+	end)
+end
+
+player.CharacterAdded:Connect(detectLocalTeam)
+detectLocalTeam()
+
+--============================================================--
+-- LÓGICA DE BLOQUEO SEGÚN TU EQUIPO
+--============================================================--
+local function shouldBlock(attackerFolder)
+	if myTeam == "Teachers" then
+		return attackerFolder == alicesFolder
+	end
+	if myTeam == "Alices" then
+		return attackerFolder == teachersFolder
+	end
+
+	-- Students o None → bloquear todos
+	return true
+end
+
+--============================================================--
+-- NÚCLEO: BLOQUEO INSTANTÁNEO
+--============================================================--
+local function tryBlock()
+	remoteEvent:FireServer(unpack(ARGS))
+end
+
+local function checkProximity(enemyPart)
+	if not myRoot then return end
+	if (myRoot.Position - enemyPart.Position).Magnitude <= RANGE then
+		tryBlock()
 	end
 end
 
 --============================================================--
--- HANDLER SUPREMO ESTABLE
+-- OBTENER EQUIPO DEL ATACANTE
 --============================================================--
+local function getAttackerTeam(model)
+	local parent = model.Parent
+	if parent == teachersFolder then return teachersFolder end
+	if parent == alicesFolder then return alicesFolder end
+	return nil -- Students y otros = enemigo neutral → se bloquea siempre
+end
 
-local function attachUltraFastHooks(sound)
+--============================================================--
+-- HANDLER DEL ATAQUE (FRAME 0)
+--============================================================--
+local function fastHook(sound)
 	if not sound:IsA("Sound") then return end
 
-	local name = sound.Name
-	local isAtk = (name == "SwingSFX" or name == "Swing")
-	if not isAtk then return end
+	local n = sound.Name
+	if n == "SwingSFX" or n == "Swing" or n == "Attack" then
 
-	-- Evitar duplicar conexiones
-	if sound:FindFirstChild("AntiDup") then return end
-	Instance.new("BoolValue", sound).Name = "AntiDup"
+		local function trigger()
+			local p = sound.Parent
+			if not p then return end
 
-	------------------------------------------------------------
-	-- 0. Si aparece sin Parent aún, esperamos su primer Parent real
-	------------------------------------------------------------
-	if not sound.Parent then
-		sound.AncestryChanged:Connect(function(_, parent)
-			if parent and sound.Parent then
-				checkAndBlock(sound.Parent)
+			local attackerModel = p.Parent
+			if not attackerModel then return end
+
+			local attackerTeam = getAttackerTeam(attackerModel)
+
+			if attackerTeam then
+				if shouldBlock(attackerTeam) then
+					checkProximity(p)
+				end
+			else
+				-- No está en Teachers ni Alices → enemigo neutral
+				checkProximity(p)
 			end
+		end
+
+		sound.Played:Connect(trigger)
+		if sound.Playing then trigger() end
+
+		sound:GetPropertyChangedSignal("Playing"):Connect(function()
+			if sound.Playing then trigger() end
 		end)
-		return
 	end
-
-	------------------------------------------------------------
-	-- 1. Spawn detection (primer frame con parent)
-	------------------------------------------------------------
-	checkAndBlock(sound.Parent)
-
-	------------------------------------------------------------
-	-- 2. AncestryChanged → el sonido se reasigna de nil → brazo
-	------------------------------------------------------------
-	sound.AncestryChanged:Connect(function(_, parent)
-		if parent and sound.Parent then
-			checkAndBlock(sound.Parent)
-		end
-	end)
-
-	------------------------------------------------------------
-	-- 3. Played (solo como respaldo)
-	------------------------------------------------------------
-	sound.Played:Connect(function()
-		if sound.Parent then
-			checkAndBlock(sound.Parent)
-		end
-	end)
 end
 
 --============================================================--
--- MONITOREO
+-- MONITOREO EN TIEMPO REAL (SIN BUCLES)
 --============================================================--
-
-local function monitorFolder(folder)
-	folder.DescendantAdded:Connect(attachUltraFastHooks)
+local function startMonitoring(folder)
 	for _, d in ipairs(folder:GetDescendants()) do
-		attachUltraFastHooks(d)
+		fastHook(d)
 	end
+	folder.DescendantAdded:Connect(fastHook)
 end
 
-monitorFolder(teachersFolder)
-monitorFolder(alicesFolder)
+startMonitoring(teachersFolder)
+startMonitoring(alicesFolder)
