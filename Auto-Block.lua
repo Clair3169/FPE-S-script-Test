@@ -23,7 +23,7 @@ local myRoot = nil
 local myTeam = "None"
 
 --============================================================--
--- DETECTAR EQUIPO DEL LOCALPLAYER EN TIEMPO REAL
+-- DETECTAR EQUIPO DEL LOCALPLAYER
 --============================================================--
 local function updateTeamFromParent(parent)
 	if parent == teachersFolder then
@@ -57,7 +57,7 @@ player.CharacterAdded:Connect(detectLocalTeam)
 detectLocalTeam()
 
 --============================================================--
--- LÓGICA DE BLOQUEO SEGÚN TU EQUIPO
+-- LOGICA DE BLOQUEO
 --============================================================--
 local function shouldBlock(attackerFolder)
 	if myTeam == "Teachers" then
@@ -69,15 +69,12 @@ local function shouldBlock(attackerFolder)
 	return true
 end
 
---============================================================--
--- BLOQUEO INSTANTÁNEO
---============================================================--
 local function tryBlock()
 	remoteEvent:FireServer(unpack(ARGS))
 end
 
 --============================================================--
--- PROXIMIDAD + (3) DOBLE VALIDACIÓN
+-- DISTANCIA + VELOCIDAD (BUFFER REAL)
 --============================================================--
 local function checkProximity(enemyPart)
 	if not myRoot then return end
@@ -87,12 +84,13 @@ local function checkProximity(enemyPart)
 
 		local attackerHRP = enemyPart.Parent:FindFirstChild("HumanoidRootPart")
 		if attackerHRP then
-			local vel = attackerHRP.Velocity.Magnitude
 
-			-- (3) Mejora: validar movimiento agresivo
+			-- Movimiento agresivo requerido
+			local vel = attackerHRP.Velocity.Magnitude
 			if vel > 10 then
 				tryBlock()
 			end
+
 		else
 			tryBlock()
 		end
@@ -100,7 +98,7 @@ local function checkProximity(enemyPart)
 end
 
 --============================================================--
--- OBTENER EQUIPO DEL ATACANTE
+-- OBTENER EQUIPO ATACANTE
 --============================================================--
 local function getAttackerTeam(model)
 	local parent = model.Parent
@@ -110,7 +108,7 @@ local function getAttackerTeam(model)
 end
 
 --============================================================--
--- HANDLER DEL ATAQUE (SONIDO) CON 4 MEJORAS
+-- HANDLER DE ATAQUE (SOLO RANGO + BUFFER)
 --============================================================--
 local function fastHook(sound)
 	if not sound:IsA("Sound") then return end
@@ -127,23 +125,19 @@ local function fastHook(sound)
 
 			local attackerTeam = getAttackerTeam(attackerModel)
 
+			-- Si pertenece a un equipo válido
 			if attackerTeam then
 				if shouldBlock(attackerTeam) then
-
-					-- (2) MEJORA: anticipación sonora → bloqueo inmediato
-					tryBlock()
-
-					-- rango mejorado
-					checkProximity(p)
+					checkProximity(p)        -- sin bloqueo directo
 				end
+
 			else
-				-- Enemigo neutral (Students u otro)
-				tryBlock()
+				-- Enemigo neutral
 				checkProximity(p)
 			end
 		end
 
-		-- Eventos sincronizados al frame 0
+		-- detección al instante
 		sound.Played:Connect(trigger)
 		if sound.Playing then trigger() end
 
@@ -154,7 +148,7 @@ local function fastHook(sound)
 end
 
 --============================================================--
--- MONITOREO EN TIEMPO REAL
+-- MONITOREO
 --============================================================--
 local function startMonitoring(folder)
 	for _, d in ipairs(folder:GetDescendants()) do
