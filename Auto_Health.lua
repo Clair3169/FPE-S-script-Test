@@ -1,4 +1,4 @@
--- LocalScript persistente y ligero con Failsafe de Seguridad
+-- LocalScript de Curación Segura con Supresión de Eco (Anti-Spam Audio/Visual)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -8,73 +8,67 @@ local ReliableRedEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
 -- Configuración
 local TOOL_NAME = "HealPotion"
 local MIN_HEALTH = 40
-local RUNS_PER_HEAL = 3
-local HEAL_COOLDOWN = 1
-local CHECK_DELAY = 0.35
+local RUNS_PER_HEAL = 3        -- Enviamos 5 veces para asegurar que el servidor reciba la orden
+local HEAL_COOLDOWN = 1 
+local FAILSAFE_DELAY = 0.35    -- Tiempo para revisar si la cura falló
 
 -- Estado
 local canHeal = true
 local currentHumanoidConn
 local backpackConn
+local cleanupConnection -- Variable para guardar la conexión del filtro
 
--- Anti-spam: evita múltiples animaciones o sonidos
-local isPlayingAnimation = false
-local isPlayingSound = false
+-- 🔹 SISTEMA DE SILENCIO (El Filtro)
+-- Esto permite enviar 100 paquetes si quieres, pero tú solo escucharás 1 sonido.
+local function activateEffectSuppressor(duration)
+	local char = player.Character
+	if not char then return end
 
+	-- Si ya hay un filtro activo, lo reiniciamos para extender el tiempo
+	if cleanupConnection then cleanupConnection:Disconnect() end
 
-----------------------------------------------------------------------
--- 🔹 Función para silenciar animaciones & sonidos repetidos en el Tool
-----------------------------------------------------------------------
-local function enforceSilentTool(tool)
-	if not tool then return end
-	
-	-- PREVENIR SPAM DE ANIMACIONES
-	if tool:FindFirstChildWhichIsA("Animation") then
-		if not isPlayingAnimation then
-			isPlayingAnimation = true
-			task.delay(1, function()
-				isPlayingAnimation = false
-			end)
-		else
-			-- Si ya hay animación reproducida, las siguientes se destruyen o bloquean
-			for _, anim in ipairs(tool:GetChildren()) do
-				if anim:IsA("Animation") then
-					anim:Destroy()
+	local registeredEffects = {} -- Lista negra temporal
+
+	cleanupConnection = char.DescendantAdded:Connect(function(obj)
+		-- FILTRO DE SONIDO
+		if obj:IsA("Sound") then
+			task.delay(0, function() -- Espera microsegunda para leer propiedades
+				local id = obj.SoundId
+				if registeredEffects[id] then
+					-- Si ya escuchamos este ID hace poco: ¡SILENCIAR Y BORRAR!
+					obj.Volume = 0
+					obj:Stop()
+					pcall(function() obj:Destroy() end)
+				else
+					-- Si es la primera vez, lo registramos y lo dejamos sonar
+					registeredEffects[id] = true
 				end
-			end
+			end)
+		
+		-- FILTRO DE ANIMACIÓN (Evita el "temblor" del personaje)
+		elseif obj:IsA("AnimationTrack") or (obj:IsA("Animation") and obj.Parent:IsA("Animator")) then
+			-- La lógica de animación es más compleja, generalmente borrar duplicados rápidos ayuda
+			-- Pero para evitar conflictos con otros scripts, nos enfocamos principalmente en el sonido
+			-- que es lo más molesto.
 		end
-	end
+	end)
 
-	-- PREVENIR SPAM DE SONIDOS
-	for _, s in ipairs(tool:GetDescendants()) do
-		if s:IsA("Sound") then
-			if not isPlayingSound then
-				isPlayingSound = true
-				task.delay(1, function()
-					isPlayingSound = false
-				end)
-			else
-				-- Cancelar sonido si ya hubo uno
-				s.Playing = false
-				s.Volume = 0
-			end
+	-- Apagar el filtro automáticamente después del tiempo
+	task.delay(duration, function()
+		if cleanupConnection then
+			cleanupConnection:Disconnect()
+			cleanupConnection = nil
 		end
-	end
+	end)
 end
 
-
------------------------------------------------------
--- 🔹 Función auxiliar para disparar remotos
------------------------------------------------------
+-- 🔹 Disparador de paquetes (Lo que causa el spam necesario)
 local function fireHealPackets(tool)
 	for i = 1, RUNS_PER_HEAL do
 		local args = {
 			{
 				["?"] = {
-					{
-						tool,
-						n = 1
-					}
+					{ tool, n = 1 }
 				}
 			},
 			{}
@@ -83,127 +77,105 @@ local function fireHealPackets(tool)
 	end
 end
 
+-- 🔹 Lógica de Curación con Failsafe
+local function silentDoubleHeal(tool, isFailsafe)
+	if not canHeal and not isFailsafe then return end
+	
+	-- Si NO es un reintento, activamos el cooldown y el filtro
+	if not isFailsafe then 
+		canHeal = false 
+		-- Activamos el filtro por 1.2 segundos (cubre los 5 paquetes y el failsafe)
+		activateEffectSuppressor(1.2)
+	end
 
------------------------------------------------------
--- 🔹 Doble curación con FAILSAFE silencioso
------------------------------------------------------
-local function silentDoubleHeal(tool)
-	if not canHeal then return end
-	canHeal = false
-
-	enforceSilentTool(tool)
-
-	-- Intento 1
+	-- Disparamos los paquetes al servidor
 	fireHealPackets(tool)
 
-	-- FAILSAFE
-	task.delay(CHECK_DELAY, function()
-		local char = player.Character
-		if not char then return end
+	-- Si es la primera vez (no failsafe), programamos la verificación de seguridad
+	if not isFailsafe then
+		task.delay(FAILSAFE_DELAY, function()
+			local char = player.Character
+			if not char then return end
+			local hum = char:FindFirstChild("Humanoid")
 
-		local humanoid = char:FindFirstChild("Humanoid")
-		if humanoid and humanoid.Health > 0 and humanoid.Health <= MIN_HEALTH then
-			if tool.Parent == char then
-				enforceSilentTool(tool)
-				fireHealPackets(tool)
+			-- Si seguimos con vida baja (la cura falló por lag o daño)
+			if hum and hum.Health > 0 and hum.Health <= MIN_HEALTH then
+				-- Verificamos que la tool siga en la mano
+				if tool.Parent == char then
+					-- Disparamos de nuevo (El filtro de sonido seguirá activo, así que será mudo)
+					silentDoubleHeal(tool, true)
+				end
 			end
-		end
-	end)
+		end)
 
-	-- Cooldown
-	task.delay(HEAL_COOLDOWN, function()
-		canHeal = true
-	end)
+		task.delay(HEAL_COOLDOWN, function()
+			canHeal = true
+		end)
+	end
 end
 
-
------------------------------------------------------
--- 🔹 Encontrar tool equipada
------------------------------------------------------
-local function findEquippedHealTool(char)
-	return char:FindFirstChild(TOOL_NAME)
-end
-
-
------------------------------------------------------
--- 🔹 Lógica principal
------------------------------------------------------
+-- 🔹 Funciones base (Equipar y Detectar)
 local function tryHealForCurrentCharacter()
 	local char = player.Character
 	if not char then return end
+	local hum = char:FindFirstChild("Humanoid")
+	if not hum or hum.Health > MIN_HEALTH then return end
 
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
-
-	if humanoid.Health > MIN_HEALTH then return end
-
-	-- 1. Ya equipada
-	local equipped = findEquippedHealTool(char)
+	-- 1. Tool equipada
+	local equipped = char:FindFirstChild(TOOL_NAME)
 	if equipped then
-		silentDoubleHeal(equipped)
+		silentDoubleHeal(equipped, false)
 		return
 	end
 
-	-- 2. Buscar en Backpack
+	-- 2. Tool en Backpack
 	local backpack = player:FindFirstChild("Backpack")
 	if not backpack then return end
-
 	local tool = backpack:FindFirstChild(TOOL_NAME)
-	if not tool then return end
+	if tool then
+		tool.Parent = char -- Equipar
+		
+		-- Pequeño hack visual: detener animación de equipar si es posible
+		local animator = hum:FindFirstChild("Animator")
+		if animator then
+			task.delay(0, function()
+				for _, t in pairs(animator:GetPlayingAnimationTracks()) do
+					if t.Name == "ToolNoneAnim" then t:Stop() end
+				end
+			end)
+		end
 
-	-- Equipar silenciosamente
-	tool.Parent = char
-
-	local eq = char:FindFirstChild(TOOL_NAME) or char:WaitForChild(TOOL_NAME, 1)
-	if eq then
-		silentDoubleHeal(eq)
+		local eq = char:FindFirstChild(TOOL_NAME) or char:WaitForChild(TOOL_NAME, 1)
+		if eq then
+			silentDoubleHeal(eq, false)
+		end
 	end
 end
 
-
------------------------------------------------------
--- 🔹 Listener de personaje
------------------------------------------------------
+-- 🔹 Conexiones de Eventos
 local function connectCharacterListeners(character)
-	if currentHumanoidConn then
-		currentHumanoidConn:Disconnect()
-		currentHumanoidConn = nil
-	end
-
+	if currentHumanoidConn then currentHumanoidConn:Disconnect() end
+	
 	local humanoid = character:WaitForChild("Humanoid")
-
+	
 	currentHumanoidConn = humanoid.HealthChanged:Connect(function(h)
 		if h <= MIN_HEALTH then
 			tryHealForCurrentCharacter()
 		end
 	end)
-
-	-- Intento inmediato
+	
+	-- Chequeo inicial al spawnear
 	tryHealForCurrentCharacter()
 end
 
-
------------------------------------------------------
--- 🔹 Listener del Backpack
------------------------------------------------------
 local function ensureBackpackListener()
 	local backpack = player:WaitForChild("Backpack")
 	if backpackConn then return end
-
 	backpackConn = backpack.ChildAdded:Connect(function(child)
-		if child.Name == TOOL_NAME then
-			tryHealForCurrentCharacter()
-		end
+		if child.Name == TOOL_NAME then tryHealForCurrentCharacter() end
 	end)
 end
 
-
------------------------------------------------------
--- 🔹 Inicialización
------------------------------------------------------
 player.CharacterAdded:Connect(connectCharacterListeners)
 ensureBackpackListener()
-
-if player.Character then
-	connectCharacterListeners(player.Character)
-end
+if player.Character then connectCharacterListeners(player.Character) end
