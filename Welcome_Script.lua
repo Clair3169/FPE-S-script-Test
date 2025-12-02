@@ -21,6 +21,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "RandomDialogueGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
+ScreenGui.DisplayOrder = 50
 
 -- 🖤 Cuadro de diálogo
 local Frame = Instance.new("Frame")
