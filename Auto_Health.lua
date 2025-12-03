@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local ReliableRedEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
@@ -12,14 +11,13 @@ local HEAL_COOLDOWN = 1
 
 -- Estado interno
 local canHeal = true
-local characterConnections = {} -- Tabla para guardar conexiones y limpiarlas
+local characterConnections = {}
 
 -- 🔹 Función de curación (Lógica de red)
 local function silentDoubleHeal(tool)
 	if not canHeal then return end
 	canHeal = false
 
-	-- Disparar evento remoto
 	for i = 1, RUNS_PER_HEAL do
 		local args = {
 			{ ["?"] = { { tool, n = 1 } } },
@@ -33,7 +31,7 @@ local function silentDoubleHeal(tool)
 	end)
 end
 
--- 🔹 Lógica MAESTRA: Forzar herramienta y curar
+-- 🔹 Lógica MAESTRA: Verifica vida Y existencia del item
 local function enforceHealthCheck()
 	local char = player.Character
 	if not char then return end
@@ -41,34 +39,45 @@ local function enforceHealthCheck()
 	local humanoid = char:FindFirstChild("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
-	-- 1. Si tenemos vida suficiente, NO hacemos nada y dejamos al jugador libre
+	-- 1. Si la vida está bien, no hacemos nada
 	if humanoid.Health > MIN_HEALTH then 
 		return 
 	end
 
-	-- >>> MODO EMERGENCIA (Vida Baja) <<<
-
+	-- >>> VERIFICACIÓN DE EXISTENCIA <<<
 	local backpack = player:FindFirstChild("Backpack")
 	local currentTool = char:FindFirstChildOfClass("Tool")
-	local healToolInBackpack = backpack and backpack:FindFirstChild(TOOL_NAME)
 	
-	-- CASO A: Ya tenemos la poción en la mano
-	if currentTool and currentTool.Name == TOOL_NAME then
-		silentDoubleHeal(currentTool) -- Curar
+	-- Buscamos si la tool existe en Backpack O si ya la tenemos en la mano
+	local potionInBackpack = backpack and backpack:FindFirstChild(TOOL_NAME)
+	local holdingPotion = currentTool and currentTool.Name == TOOL_NAME
+
+	-- ¡AQUÍ ESTÁ EL CAMBIO!
+	-- Si NO la tenemos en la mochila Y NO la tenemos en la mano...
+	if not potionInBackpack and not holdingPotion then
+		-- ...El script se duerme y te deja usar cualquier otra arma libremente.
+		return 
+	end
+
+	-- >>> MODO PRIORIDAD (Solo si tenemos la poción y vida baja) <<<
+
+	-- CASO A: Ya la tenemos equipada
+	if holdingPotion then
+		silentDoubleHeal(currentTool)
 		return
 	end
 
-	-- CASO B: Tenemos OTRA cosa en la mano (Espada, Gun, etc)
+	-- CASO B: Tenemos OTRA cosa equipada (y sí tenemos la poción guardada)
 	if currentTool and currentTool.Name ~= TOOL_NAME then
-		-- La desequipamos forzosamente mandándola al backpack
+		-- Desequipamos la otra arma forzosamente para dar espacio a la poción
 		currentTool.Parent = backpack
 	end
 
-	-- CASO C: No tenemos la poción equipada, hay que buscarla y equiparla
-	if healToolInBackpack then
-		healToolInBackpack.Parent = char -- Equipar forzosamente
+	-- CASO C: La buscamos en la mochila y la equipamos
+	if potionInBackpack then
+		potionInBackpack.Parent = char -- Equipar
 		
-		-- Pequeña espera técnica para asegurar que el server registre el equipamiento antes de disparar el evento
+		-- Pequeña espera técnica para asegurar el equipamiento
 		local equippedTool = char:FindFirstChild(TOOL_NAME)
 		if equippedTool then
 			silentDoubleHeal(equippedTool)
@@ -78,7 +87,7 @@ end
 
 -- 🔹 Gestión de Eventos del Personaje
 local function connectCharacterListeners(char)
-	-- Limpiar conexiones anteriores si existen
+	-- Limpiar conexiones anteriores
 	for _, conn in pairs(characterConnections) do
 		conn:Disconnect()
 	end
@@ -86,32 +95,30 @@ local function connectCharacterListeners(char)
 
 	local humanoid = char:WaitForChild("Humanoid")
 
-	-- 1. Escuchar cambios de vida
-	local healthConn = humanoid.HealthChanged:Connect(function(health)
+	-- 1. Cambio de Salud
+	local healthConn = humanoid.HealthChanged:Connect(function()
 		enforceHealthCheck()
 	end)
 	table.insert(characterConnections, healthConn)
 
-	-- 2. ANTI-DESEQUIPAR: Si el jugador guarda la tool o se la quitan
+	-- 2. Alguien quitó una tool (o la guardamos)
 	local childRemovedConn = char.ChildRemoved:Connect(function(child)
-		-- Si se quita la poción y seguimos con poca vida, la función enforce la devolverá
 		if child:IsA("Tool") then
 			enforceHealthCheck()
 		end
 	end)
 	table.insert(characterConnections, childRemovedConn)
 
-	-- 3. ANTI-CAMBIO: Si el jugador intenta equipar OTRA tool
+	-- 3. Alguien equipó una tool
 	local childAddedConn = char.ChildAdded:Connect(function(child)
-		-- Si se equipa algo que NO es la poción y hay poca vida, enforceHealthCheck lo quitará
 		if child:IsA("Tool") then
-			-- Usamos task.defer para dejar que Roblox procese el equipamiento actual antes de revertirlo
+			-- Usamos defer para dejar que ocurra el equipamiento y luego verificar si es legal
 			task.defer(enforceHealthCheck)
 		end
 	end)
 	table.insert(characterConnections, childAddedConn)
 
-	-- Chequeo inicial al respawnear
+	-- Chequeo inicial
 	enforceHealthCheck()
 end
 
@@ -122,9 +129,12 @@ end
 
 player.CharacterAdded:Connect(connectCharacterListeners)
 
--- Escuchar si la tool llega al backpack tarde (ej. al comprarla o recibirla)
+-- 🔹 Listener del Backpack (IMPORTANTE)
+-- Si estamos a poca vida pero sin poción, y de repente recogemos una,
+-- este evento activará el script inmediatamente.
 local function monitorBackpack()
 	local backpack = player:WaitForChild("Backpack")
+	
 	backpack.ChildAdded:Connect(function(child)
 		if child.Name == TOOL_NAME then
 			enforceHealthCheck()
