@@ -1,6 +1,6 @@
--- LocalScript persistente y ligero (funciona tras morir / respawnear)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local ReliableRedEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
@@ -8,28 +8,21 @@ local ReliableRedEvent = ReplicatedStorage:WaitForChild("ReliableRedEvent")
 local TOOL_NAME = "HealPotion"
 local MIN_HEALTH = 35
 local RUNS_PER_HEAL = 3
-local HEAL_COOLDOWN = 1 -- segundos
+local HEAL_COOLDOWN = 1
 
--- Estado
+-- Estado interno
 local canHeal = true
-local currentHumanoidConn
-local backpackConn
+local characterConnections = {} -- Tabla para guardar conexiones y limpiarlas
 
--- 🔹 Doble curación silenciosa
+-- 🔹 Función de curación (Lógica de red)
 local function silentDoubleHeal(tool)
 	if not canHeal then return end
 	canHeal = false
 
+	-- Disparar evento remoto
 	for i = 1, RUNS_PER_HEAL do
 		local args = {
-			{
-				["?"] = {
-					{
-						tool,
-						n = 1
-					}
-				}
-			},
+			{ ["?"] = { { tool, n = 1 } } },
 			{}
 		}
 		ReliableRedEvent:FireServer(unpack(args))
@@ -40,82 +33,102 @@ local function silentDoubleHeal(tool)
 	end)
 end
 
--- 🔹 Nueva función que detecta SI LA TOOL YA ESTÁ EQUIPADA
-local function findEquippedHealTool(char)
-	return char:FindFirstChild(TOOL_NAME)
-end
-
--- 🔹 Lógica principal (Backpack o equipada)
-local function tryHealForCurrentCharacter()
+-- 🔹 Lógica MAESTRA: Forzar herramienta y curar
+local function enforceHealthCheck()
 	local char = player.Character
 	if not char then return end
+	
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
 
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
+	-- 1. Si tenemos vida suficiente, NO hacemos nada y dejamos al jugador libre
+	if humanoid.Health > MIN_HEALTH then 
+		return 
+	end
 
-	-- Solo si la salud está baja
-	if humanoid.Health > MIN_HEALTH then return end
+	-- >>> MODO EMERGENCIA (Vida Baja) <<<
 
-	-- 1. Si la tool ya está equipada → curar inmediatamente
-	local equipped = findEquippedHealTool(char)
-	if equipped then
-		silentDoubleHeal(equipped)
+	local backpack = player:FindFirstChild("Backpack")
+	local currentTool = char:FindFirstChildOfClass("Tool")
+	local healToolInBackpack = backpack and backpack:FindFirstChild(TOOL_NAME)
+	
+	-- CASO A: Ya tenemos la poción en la mano
+	if currentTool and currentTool.Name == TOOL_NAME then
+		silentDoubleHeal(currentTool) -- Curar
 		return
 	end
 
-	-- 2. Si NO está equipada, buscarla en el backpack
-	local backpack = player:FindFirstChild("Backpack")
-	if not backpack then return end
+	-- CASO B: Tenemos OTRA cosa en la mano (Espada, Gun, etc)
+	if currentTool and currentTool.Name ~= TOOL_NAME then
+		-- La desequipamos forzosamente mandándola al backpack
+		currentTool.Parent = backpack
+	end
 
-	local tool = backpack:FindFirstChild(TOOL_NAME)
-	if not tool then return end
-
-	-- Equipar SIN animación redundante
-	tool.Parent = char
-
-	-- Una vez equipada, curar
-	local eq = char:FindFirstChild(TOOL_NAME) or char:WaitForChild(TOOL_NAME,1)
-	if eq then
-		silentDoubleHeal(eq)
+	-- CASO C: No tenemos la poción equipada, hay que buscarla y equiparla
+	if healToolInBackpack then
+		healToolInBackpack.Parent = char -- Equipar forzosamente
+		
+		-- Pequeña espera técnica para asegurar que el server registre el equipamiento antes de disparar el evento
+		local equippedTool = char:FindFirstChild(TOOL_NAME)
+		if equippedTool then
+			silentDoubleHeal(equippedTool)
+		end
 	end
 end
 
--- 🔹 Conexión por respawn
-local function connectCharacterListeners(character)
-	if currentHumanoidConn then
-		currentHumanoidConn:Disconnect()
-		currentHumanoidConn = nil
+-- 🔹 Gestión de Eventos del Personaje
+local function connectCharacterListeners(char)
+	-- Limpiar conexiones anteriores si existen
+	for _, conn in pairs(characterConnections) do
+		conn:Disconnect()
 	end
+	characterConnections = {}
 
-	local humanoid = character:WaitForChild("Humanoid")
+	local humanoid = char:WaitForChild("Humanoid")
 
-	-- Detectar salud baja
-	currentHumanoidConn = humanoid.HealthChanged:Connect(function(h)
-		if h <= MIN_HEALTH then
-			tryHealForCurrentCharacter()
+	-- 1. Escuchar cambios de vida
+	local healthConn = humanoid.HealthChanged:Connect(function(health)
+		enforceHealthCheck()
+	end)
+	table.insert(characterConnections, healthConn)
+
+	-- 2. ANTI-DESEQUIPAR: Si el jugador guarda la tool o se la quitan
+	local childRemovedConn = char.ChildRemoved:Connect(function(child)
+		-- Si se quita la poción y seguimos con poca vida, la función enforce la devolverá
+		if child:IsA("Tool") then
+			enforceHealthCheck()
 		end
 	end)
+	table.insert(characterConnections, childRemovedConn)
 
-	-- Intento inmediato al respawn
-	tryHealForCurrentCharacter()
-end
-
--- 🔹 Listener único en el Backpack
-local function ensureBackpackListener()
-	local backpack = player:WaitForChild("Backpack")
-	if backpackConn then return end
-
-	backpackConn = backpack.ChildAdded:Connect(function(child)
-		if child.Name == TOOL_NAME then
-			tryHealForCurrentCharacter()
+	-- 3. ANTI-CAMBIO: Si el jugador intenta equipar OTRA tool
+	local childAddedConn = char.ChildAdded:Connect(function(child)
+		-- Si se equipa algo que NO es la poción y hay poca vida, enforceHealthCheck lo quitará
+		if child:IsA("Tool") then
+			-- Usamos task.defer para dejar que Roblox procese el equipamiento actual antes de revertirlo
+			task.defer(enforceHealthCheck)
 		end
 	end)
+	table.insert(characterConnections, childAddedConn)
+
+	-- Chequeo inicial al respawnear
+	enforceHealthCheck()
 end
 
 -- Inicialización
-player.CharacterAdded:Connect(connectCharacterListeners)
-ensureBackpackListener()
-
 if player.Character then
 	connectCharacterListeners(player.Character)
 end
+
+player.CharacterAdded:Connect(connectCharacterListeners)
+
+-- Escuchar si la tool llega al backpack tarde (ej. al comprarla o recibirla)
+local function monitorBackpack()
+	local backpack = player:WaitForChild("Backpack")
+	backpack.ChildAdded:Connect(function(child)
+		if child.Name == TOOL_NAME then
+			enforceHealthCheck()
+		end
+	end)
+end
+monitorBackpack()
