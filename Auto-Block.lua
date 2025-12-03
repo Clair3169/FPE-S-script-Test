@@ -1,6 +1,7 @@
 --============================================================--
--- CONFIGURACIÓN
+-- AUTO-BLOCK / PARRY MEJORADO (LocalScript)
 --============================================================--
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,16 +16,16 @@ local studentsFolder = Workspace:WaitForChild("Students")
 
 local RANGE = 16
 local PREDICTION_BUFFER = 2
-local TRUE_RANGE = RANGE + PREDICTION_BUFFER
+local TRUE_RANGE = RANGE + PREDICTION_BUFFER * 4
 
 local ARGS  = { { ["^"] = { { n = 0 } } }, {} }
 
 local myRoot = nil
 local myTeam = "None"
 
---============================================================--
--- DETECTAR EQUIPO DEL LOCALPLAYER
---============================================================--
+local soundLastTriggered = setmetatable({}, { __mode = "k" })
+local attackerLastTriggered = setmetatable({}, { __mode = "k" })
+
 local function updateTeamFromParent(parent)
 	if parent == teachersFolder then
 		myTeam = "Teachers"
@@ -47,7 +48,6 @@ local function detectLocalTeam()
 
 	myRoot = char:FindFirstChild("HumanoidRootPart")
 	updateTeamFromParent(char.Parent)
-
 	char:GetPropertyChangedSignal("Parent"):Connect(function()
 		updateTeamFromParent(char.Parent)
 	end)
@@ -56,103 +56,148 @@ end
 player.CharacterAdded:Connect(detectLocalTeam)
 detectLocalTeam()
 
---============================================================--
--- LOGICA DE BLOQUEO
---============================================================--
 local function shouldBlock(attackerFolder)
 	if myTeam == "Teachers" then
 		return attackerFolder == alicesFolder
-	end
-	if myTeam == "Alices" then
+	elseif myTeam == "Alices" then
 		return attackerFolder == teachersFolder
-	end
-	return true
-end
-
-local function tryBlock()
-	remoteEvent:FireServer(unpack(ARGS))
-end
-
---============================================================--
--- DISTANCIA + VELOCIDAD (BUFFER REAL)
---============================================================--
-local function checkProximity(enemyPart)
-	if not myRoot then return end
-
-	local dist = (myRoot.Position - enemyPart.Position).Magnitude
-	if dist <= TRUE_RANGE then
-
-		local attackerHRP = enemyPart.Parent:FindFirstChild("HumanoidRootPart")
-		if attackerHRP then
-
-			-- Movimiento agresivo requerido
-			local vel = attackerHRP.Velocity.Magnitude
-			if vel > 10 then
-				tryBlock()
-			end
-
-		else
-			tryBlock()
-		end
+	elseif myTeam == "Students" then
+		return attackerFolder == teachersFolder or attackerFolder == alicesFolder
+	else
+		if attackerFolder == teachersFolder or attackerFolder == alicesFolder then return true end
+		return true
 	end
 end
 
---============================================================--
--- OBTENER EQUIPO ATACANTE
---============================================================--
 local function getAttackerTeam(model)
+	if not model then return nil end
 	local parent = model.Parent
 	if parent == teachersFolder then return teachersFolder end
 	if parent == alicesFolder then return alicesFolder end
+	if parent == studentsFolder then return studentsFolder end
 	return nil
 end
 
---============================================================--
--- HANDLER DE ATAQUE (SOLO RANGO + BUFFER)
---============================================================--
-local function fastHook(sound)
-	if not sound:IsA("Sound") then return end
+local function tryBlock(attackerModel)
+	local now = os.clock()
+	if attackerModel then
+		local last = attackerLastTriggered[attackerModel]
+		if last and now - last < 0.03 then return end
+		attackerLastTriggered[attackerModel] = now
+	else
+		local last = attackerLastTriggered.__global
+		if last and now - last < 0.03 then return end
+		attackerLastTriggered.__global = now
+	end
 
-	local n = sound.Name
-	if n == "SwingSFX" or n == "Swing" or n == "Attack" then
+	remoteEvent:FireServer(unpack(ARGS))
+end
 
-		local function trigger()
-			local p = sound.Parent
-			if not p then return end
+local function checkProximityAndPredict(enemyPart, attackerModel)
+	if not myRoot or not enemyPart or not attackerModel then return end
 
-			local attackerModel = p.Parent
-			if not attackerModel then return end
+	local attackerHRP = attackerModel:FindFirstChild("HumanoidRootPart")
+	if not attackerHRP then return end
 
-			local attackerTeam = getAttackerTeam(attackerModel)
+	local myPos = myRoot.Position
+	local atkPos = attackerHRP.Position
+	local toPlayer = myPos - atkPos
+	local dist = toPlayer.Magnitude
 
-			-- Si pertenece a un equipo válido
-			if attackerTeam then
-				if shouldBlock(attackerTeam) then
-					checkProximity(p)        -- sin bloqueo directo
-				end
+	if dist > TRUE_RANGE then return end
 
-			else
-				-- Enemigo neutral
-				checkProximity(p)
-			end
+	local atkVel = attackerHRP.Velocity
+	local atkSpeed = atkVel.Magnitude
+	local myVel = myRoot.Velocity
+	local relVel = (atkVel - myVel).Magnitude
+
+	local atkDirDot = 0
+	if atkSpeed > 0.001 then
+		atkDirDot = atkVel.Unit:Dot(toPlayer.Unit)
+	end
+
+	local estSpeed = math.max(atkSpeed, 6)
+	local timeToReach = dist / estSpeed
+	local predictionTime = math.min(timeToReach, PREDICTION_BUFFER)
+
+	local predictedPos = atkPos + atkVel * predictionTime
+	local predictedDist = (myPos - predictedPos).Magnitude
+
+	local SHORT = 6
+	local MEDIUM = 12
+	local LONG = TRUE_RANGE
+
+	local should = false
+
+	if dist <= SHORT or predictedDist <= SHORT then
+		should = true
+	elseif dist <= MEDIUM or predictedDist <= MEDIUM then
+		if atkSpeed > 1 or atkDirDot > 0.2 or relVel > 1.5 then
+			should = true
 		end
+	else
+		if atkSpeed > 8 and atkDirDot > 0.4 then
+			should = true
+		elseif predictedDist <= MEDIUM and (atkSpeed > 3 or atkDirDot > 0.2) then
+			should = true
+		end
+	end
 
-		-- detección al instante
-		sound.Played:Connect(trigger)
-		if sound.Playing then trigger() end
-
-		sound:GetPropertyChangedSignal("Playing"):Connect(function()
-			if sound.Playing then trigger() end
-		end)
+	if should then
+		tryBlock(attackerModel)
 	end
 end
 
---============================================================--
--- MONITOREO
---============================================================--
+local function fastHook(descendant)
+	if not descendant or not descendant:IsA("Sound") then return end
+
+	local n = descendant.Name
+	if not (n == "SwingSFX" or n == "Swing" or n == "Attack") then return end
+
+	local sound = descendant
+	if sound:GetAttribute("__autoParryHooked") then return end
+	sound:SetAttribute("__autoParryHooked", true)
+
+	local function trigger()
+		local now = os.clock()
+		local last = soundLastTriggered[sound]
+		if last and now - last < 0.02 then return end
+		soundLastTriggered[sound] = now
+
+		local p = sound.Parent
+		if not p then return end
+
+		local attackerModel = p.Parent
+		if not attackerModel then
+			if p:IsA("Model") then attackerModel = p end
+			if not attackerModel then return end
+		end
+
+		local attackerTeam = getAttackerTeam(attackerModel)
+
+		if attackerTeam then
+			if shouldBlock(attackerTeam) then
+				checkProximityAndPredict(p, attackerModel)
+			end
+		else
+			checkProximityAndPredict(p, attackerModel)
+		end
+	end
+
+	pcall(function()
+		sound.Played:Connect(trigger)
+	end)
+
+	sound:GetPropertyChangedSignal("Playing"):Connect(function()
+		if sound.Playing then trigger() end
+	end)
+
+	if sound.Playing then trigger() end
+end
+
 local function startMonitoring(folder)
 	for _, d in ipairs(folder:GetDescendants()) do
-		fastHook(d)
+		pcall(function() fastHook(d) end)
 	end
 	folder.DescendantAdded:Connect(fastHook)
 end
