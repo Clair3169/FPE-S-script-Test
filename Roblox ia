@@ -1,0 +1,181 @@
+# ======================================================================
+# ROBLOX AI ULTIMATE CONTROLLER
+# IA adaptativa + precisión + predicción + agilidad + estabilidad extrema
+# ======================================================================
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class Native {
+    [DllImport("ntdll.dll")]
+    public static extern int NtSuspendProcess(IntPtr h);
+    [DllImport("ntdll.dll")]
+    public static extern int NtResumeProcess(IntPtr h);
+}
+"@
+
+# ===================== IDENTIDAD =====================
+$ProcessName = "RobloxPlayerBeta"
+$StateFile   = "$PSScriptRoot\AI_Ultimate_State.json"
+
+# ===================== HARDWARE OBJETIVO =====================
+$Cores = 3                            # CPU 0,1,2
+$AffinityMask = 0x7                   # 111b
+
+# ===================== PARÁMETROS BASE =====================
+$CpuSoftLimit = 76                    # zona segura
+$CpuHardLimit = 88                    # zona peligrosa
+$CpuSpike     = 18                    # salto brusco
+$MemCriticalMB = 900
+
+$SampleMS = 190                       # rápido
+$LoopMS   = 900                       # bucle ágil
+$Window   = 6                         # precisión suficiente
+
+$BasePause = 95                       # micro-pausa base
+
+# ===================== IA (MEMORIA + APRENDIZAJE) =====================
+$AI = @{
+    Sensitivity  = 1.0
+    Aggression   = 1.0
+    Confidence   = 0.6
+    LearnRate    = 0.04
+    FreezeCount  = 0
+    StableTicks  = 0
+}
+
+if (Test-Path $StateFile) {
+    try { $AI = Get-Content $StateFile | ConvertFrom-Json } catch {}
+}
+
+# ===================== ESTADO INTERNO =====================
+$CpuHistory = @()
+$lastCpu    = 0
+$cooldown   = 0
+
+# ===================== FUNCIONES =====================
+function CpuSample($p,$cores){
+    $t1 = $p.TotalProcessorTime.TotalMilliseconds
+    Start-Sleep -Milliseconds $SampleMS
+    $p.Refresh()
+    $t2 = $p.TotalProcessorTime.TotalMilliseconds
+    return (($t2-$t1)/($SampleMS*$cores))*100
+}
+
+function Clamp($v,$min,$max){
+    if ($v -lt $min) { return $min }
+    if ($v -gt $max) { return $max }
+    return $v
+}
+
+function Stats($arr){
+    return @{
+        Avg = ($arr | Measure-Object -Average).Average
+        Var = ($arr | Measure-Object -Variance).Variance
+        Max = ($arr | Measure-Object -Maximum).Maximum
+    }
+}
+
+# ===================== BUCLE PRINCIPAL =====================
+while ($true) {
+
+    $p = Get-Process $ProcessName -ErrorAction SilentlyContinue
+    if (-not $p) {
+        Start-Sleep -Milliseconds 1200
+        continue
+    }
+
+    # Afinidad y prioridad estables
+    if ($p.ProcessorAffinity -ne $AffinityMask) {
+        $p.ProcessorAffinity = $AffinityMask
+    }
+    if ($p.PriorityClass -ne "BelowNormal") {
+        $p.PriorityClass = "BelowNormal"
+    }
+
+    # -------- OBSERVACIÓN --------
+    $cpu = [math]::Round((CpuSample $p $Cores),1)
+    $delta = $cpu - $lastCpu
+    $lastCpu = $cpu
+
+    $CpuHistory += $cpu
+    if ($CpuHistory.Count -gt $Window) {
+        $CpuHistory = $CpuHistory[-$Window..-1]
+    }
+
+    $stats = Stats $CpuHistory
+    $avg = $stats.Avg
+    $var = $stats.Var
+    $max = $stats.Max
+
+    $freeMem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024
+
+    # -------- PREDICCIÓN --------
+    $trend = 0
+    if ($CpuHistory.Count -ge 3) {
+        $trend = $CpuHistory[-1] - $CpuHistory[0]
+    }
+
+    # -------- RIESGO GLOBAL --------
+    $risk = 0
+    if ($avg   -gt ($CpuSoftLimit / $AI.Sensitivity)) { $risk += 2 }
+    if ($max   -gt $CpuHardLimit)                     { $risk += 3 }
+    if ($var   -gt 45)                                { $risk += 2 }
+    if ($delta -gt $CpuSpike)                         { $risk += 2 }
+    if ($trend -gt 8)                                 { $risk += 1 }
+    if ($freeMem -lt $MemCriticalMB)                  { $risk += 3 }
+
+    # -------- APRENDIZAJE IA --------
+    if ($risk -ge 4) {
+        $AI.Sensitivity += $AI.LearnRate
+        $AI.Aggression  += $AI.LearnRate
+        $AI.Confidence  -= 0.03
+        $AI.FreezeCount++
+        $AI.StableTicks = 0
+    } else {
+        $AI.Sensitivity -= ($AI.LearnRate/2)
+        $AI.Aggression  -= ($AI.LearnRate/3)
+        $AI.Confidence  += 0.02
+        $AI.StableTicks++
+    }
+
+    $AI.Sensitivity = Clamp $AI.Sensitivity 0.8 1.6
+    $AI.Aggression  = Clamp $AI.Aggression  0.8 1.7
+    $AI.Confidence  = Clamp $AI.Confidence  0.3 0.9
+
+    # -------- DECISIÓN PROPORCIONAL --------
+    if ($risk -ge 6) {
+        # Intervención fuerte (monstruosa pero controlada)
+        $p.PriorityClass = "Low"
+        $pause = [int]($BasePause * $AI.Aggression * (1-$AI.Confidence) + 90)
+        [Native]::NtSuspendProcess($p.Handle)
+        Start-Sleep -Milliseconds $pause
+        [Native]::NtResumeProcess($p.Handle)
+        $p.MinWorkingSet = 64MB
+        $p.MaxWorkingSet = 480MB
+        $cooldown = 14
+    }
+    elseif ($risk -ge 3) {
+        # Corrección fina (ágil)
+        $p.PriorityClass = "BelowNormal"
+        $pause = [int]($BasePause * (1-$AI.Confidence))
+        if ($pause -gt 55) {
+            [Native]::NtSuspendProcess($p.Handle)
+            Start-Sleep -Milliseconds $pause
+            [Native]::NtResumeProcess($p.Handle)
+        }
+        $cooldown = 8
+    }
+    else {
+        if ($cooldown -gt 0) {
+            $cooldown--
+        }
+    }
+
+    # -------- MEMORIA PERSISTENTE --------
+    try {
+        $AI | ConvertTo-Json | Set-Content $StateFile
+    } catch {}
+
+    Start-Sleep -Milliseconds $LoopMS
+}
