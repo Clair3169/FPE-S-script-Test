@@ -1,82 +1,66 @@
-# ======================================================================
-# ROBLOX AI ULTIMATE CONTROLLER
-# IA adaptativa + precisión + predicción + agilidad + estabilidad extrema
-# ======================================================================
+# =====================================================================
+# ROBLOX AI ULTIMATE CONTROLLER — COMPLETE & STABLE
+# Windows 10 | PowerShell 5.1 | Intel HD 4600
+# =====================================================================
 
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class Native {
-    [DllImport("ntdll.dll")]
-    public static extern int NtSuspendProcess(IntPtr h);
-    [DllImport("ntdll.dll")]
-    public static extern int NtResumeProcess(IntPtr h);
-}
-"@
-
-# ===================== IDENTIDAD =====================
+# --------- CONFIGURACIÓN BASE ----------
 $ProcessName = "RobloxPlayerBeta"
-$StateFile   = "$PSScriptRoot\AI_Ultimate_State.json"
+$CoresUsed   = 3
+$AffinityMask = 0x7           # CPU 0,1,2
+$LoopDelayMS = 900
+$SampleMS    = 200
 
-# ===================== HARDWARE OBJETIVO =====================
-$Cores = 3                            # CPU 0,1,2
-$AffinityMask = 0x7                   # 111b
+# --------- LÍMITES (AJUSTADOS A TU CPU/GPU) ----------
+$CpuSoftLimit = 70
+$CpuHardLimit = 85
+$CpuSpikeJump = 18
+$MemCriticalMB = 850
 
-# ===================== PARÁMETROS BASE =====================
-$CpuSoftLimit = 76                    # zona segura
-$CpuHardLimit = 88                    # zona peligrosa
-$CpuSpike     = 18                    # salto brusco
-$MemCriticalMB = 900
+# --------- IA / ADAPTACIÓN ----------
+$StateFile = "$PSScriptRoot\Roblox_AI_State.json"
 
-$SampleMS = 190                       # rápido
-$LoopMS   = 900                       # bucle ágil
-$Window   = 6                         # precisión suficiente
-
-$BasePause = 95                       # micro-pausa base
-
-# ===================== IA (MEMORIA + APRENDIZAJE) =====================
 $AI = @{
-    Sensitivity  = 1.0
-    Aggression   = 1.0
-    Confidence   = 0.6
-    LearnRate    = 0.04
-    FreezeCount  = 0
-    StableTicks  = 0
+    Sensitivity = 1.0
+    Aggression  = 1.0
+    Confidence  = 0.6
+    FreezeCount = 0
+    StableTicks = 0
 }
 
 if (Test-Path $StateFile) {
-    try { $AI = Get-Content $StateFile | ConvertFrom-Json } catch {}
+    try {
+        $AI = Get-Content $StateFile | ConvertFrom-Json
+    } catch {}
 }
 
-# ===================== ESTADO INTERNO =====================
-$CpuHistory = @()
-$lastCpu    = 0
-$cooldown   = 0
+# --------- FUNCIONES ----------
+function Clamp {
+    param(
+        [double]$Value,
+        [double]$Min,
+        [double]$Max
+    )
+    if ($Value -lt $Min) { return $Min }
+    if ($Value -gt $Max) { return $Max }
+    return $Value
+}
 
-# ===================== FUNCIONES =====================
-function CpuSample($p,$cores){
-    $t1 = $p.TotalProcessorTime.TotalMilliseconds
+function Get-CpuUsage {
+    param($Process, $Cores)
+
+    $t1 = $Process.TotalProcessorTime.TotalMilliseconds
     Start-Sleep -Milliseconds $SampleMS
-    $p.Refresh()
-    $t2 = $p.TotalProcessorTime.TotalMilliseconds
-    return (($t2-$t1)/($SampleMS*$cores))*100
+    $Process.Refresh()
+    $t2 = $Process.TotalProcessorTime.TotalMilliseconds
+
+    return (($t2 - $t1) / ($SampleMS * $Cores)) * 100
 }
 
-function Clamp($v,$min,$max){
-    if ($v -lt $min) { return $min }
-    if ($v -gt $max) { return $max }
-    return $v
-}
+# --------- INICIALIZACIÓN ----------
+$LastCpu = 0
+$CpuHistory = @()
 
-function Stats($arr){
-    return @{
-        Avg = ($arr | Measure-Object -Average).Average
-        Var = ($arr | Measure-Object -Variance).Variance
-        Max = ($arr | Measure-Object -Maximum).Maximum
-    }
-}
-
-# ===================== BUCLE PRINCIPAL =====================
+# --------- BUCLE PRINCIPAL ----------
 while ($true) {
 
     $p = Get-Process $ProcessName -ErrorAction SilentlyContinue
@@ -85,97 +69,58 @@ while ($true) {
         continue
     }
 
-    # Afinidad y prioridad estables
+    # Afinidad fija
     if ($p.ProcessorAffinity -ne $AffinityMask) {
         $p.ProcessorAffinity = $AffinityMask
     }
+
+    # Prioridad base
     if ($p.PriorityClass -ne "BelowNormal") {
         $p.PriorityClass = "BelowNormal"
     }
 
-    # -------- OBSERVACIÓN --------
-    $cpu = [math]::Round((CpuSample $p $Cores),1)
-    $delta = $cpu - $lastCpu
-    $lastCpu = $cpu
+    # CPU REAL
+    $Cpu = Get-CpuUsage $p $CoresUsed
+    $CpuHistory += $Cpu
+    if ($CpuHistory.Count -gt 6) { $CpuHistory = $CpuHistory[-6..-1] }
 
-    $CpuHistory += $cpu
-    if ($CpuHistory.Count -gt $Window) {
-        $CpuHistory = $CpuHistory[-$Window..-1]
-    }
+    # MEMORIA
+    $MemMB = [math]::Round($p.WorkingSet64 / 1MB)
 
-    $stats = Stats $CpuHistory
-    $avg = $stats.Avg
-    $var = $stats.Var
-    $max = $stats.Max
+    # DETECCIÓN DE SPIKE
+    $Spike = ($Cpu - $LastCpu) -gt $CpuSpikeJump
 
-    $freeMem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024
+    # ---- LÓGICA ANTI-FREEZE ----
+    if ($Cpu -gt $CpuHardLimit -or $Spike -or $MemMB -gt $MemCriticalMB) {
 
-    # -------- PREDICCIÓN --------
-    $trend = 0
-    if ($CpuHistory.Count -ge 3) {
-        $trend = $CpuHistory[-1] - $CpuHistory[0]
-    }
+        $p.PriorityClass = "Idle"
+        Start-Sleep -Milliseconds (120 * $AI.Sensitivity)
 
-    # -------- RIESGO GLOBAL --------
-    $risk = 0
-    if ($avg   -gt ($CpuSoftLimit / $AI.Sensitivity)) { $risk += 2 }
-    if ($max   -gt $CpuHardLimit)                     { $risk += 3 }
-    if ($var   -gt 45)                                { $risk += 2 }
-    if ($delta -gt $CpuSpike)                         { $risk += 2 }
-    if ($trend -gt 8)                                 { $risk += 1 }
-    if ($freeMem -lt $MemCriticalMB)                  { $risk += 3 }
-
-    # -------- APRENDIZAJE IA --------
-    if ($risk -ge 4) {
-        $AI.Sensitivity += $AI.LearnRate
-        $AI.Aggression  += $AI.LearnRate
-        $AI.Confidence  -= 0.03
         $AI.FreezeCount++
-        $AI.StableTicks = 0
-    } else {
-        $AI.Sensitivity -= ($AI.LearnRate/2)
-        $AI.Aggression  -= ($AI.LearnRate/3)
-        $AI.Confidence  += 0.02
-        $AI.StableTicks++
-    }
+        $AI.Confidence = Clamp ([double]($AI.Confidence - 0.04)) 0.3 1.0
+        $AI.Aggression = Clamp ([double]($AI.Aggression + 0.06)) 0.7 1.6
 
-    $AI.Sensitivity = Clamp $AI.Sensitivity 0.8 1.6
-    $AI.Aggression  = Clamp $AI.Aggression  0.8 1.7
-    $AI.Confidence  = Clamp $AI.Confidence  0.3 0.9
-
-    # -------- DECISIÓN PROPORCIONAL --------
-    if ($risk -ge 6) {
-        # Intervención fuerte (monstruosa pero controlada)
-        $p.PriorityClass = "Low"
-        $pause = [int]($BasePause * $AI.Aggression * (1-$AI.Confidence) + 90)
-        [Native]::NtSuspendProcess($p.Handle)
-        Start-Sleep -Milliseconds $pause
-        [Native]::NtResumeProcess($p.Handle)
-        $p.MinWorkingSet = 64MB
-        $p.MaxWorkingSet = 480MB
-        $cooldown = 14
     }
-    elseif ($risk -ge 3) {
-        # Corrección fina (ágil)
+    elseif ($Cpu -lt $CpuSoftLimit) {
+
         $p.PriorityClass = "BelowNormal"
-        $pause = [int]($BasePause * (1-$AI.Confidence))
-        if ($pause -gt 55) {
-            [Native]::NtSuspendProcess($p.Handle)
-            Start-Sleep -Milliseconds $pause
-            [Native]::NtResumeProcess($p.Handle)
-        }
-        $cooldown = 8
-    }
-    else {
-        if ($cooldown -gt 0) {
-            $cooldown--
+        $AI.StableTicks++
+
+        if ($AI.StableTicks -gt 6) {
+            $AI.Confidence = Clamp ([double]($AI.Confidence + 0.02)) 0.3 1.0
+            $AI.Aggression = Clamp ([double]($AI.Aggression - 0.02)) 0.7 1.6
+            $AI.StableTicks = 0
         }
     }
 
-    # -------- MEMORIA PERSISTENTE --------
+    # Sensibilidad global
+    $AI.Sensitivity = Clamp ([double](1 + ($AI.Aggression - 1) * (1 - $AI.Confidence))) 0.8 1.5
+
+    # Guardar estado IA
     try {
         $AI | ConvertTo-Json | Set-Content $StateFile
     } catch {}
 
-    Start-Sleep -Milliseconds $LoopMS
+    $LastCpu = $Cpu
+    Start-Sleep -Milliseconds $LoopDelayMS
 }
