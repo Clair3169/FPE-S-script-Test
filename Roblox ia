@@ -1,20 +1,27 @@
-# =====================================================================
-# ROBLOX AI ULTIMATE CONTROLLER — COMPLETE & STABLE
-# Windows 10 | PowerShell 5.1 | Intel HD 4600
-# =====================================================================
+# ======================================================================
+# ROBLOX AI ULTIMATE CONTROLLER - CONFIGURACIÓN ANTI-FREEZE ESTABLE
+# ELIMINADO: Dependencia de NtSuspendProcess (si no quieres usarlo)
+# AÑADIDO: Lógica de PAUSA activa y segura para evitar congelamiento.
+# ======================================================================
 
-# --------- CONFIGURACIÓN BASE ----------
+# --------- CONFIGURACIÓN DE PROCESO Y HARDWARE ----------
+# Detectamos núcleos reales para evitar "Invalid Argument" en afinidad
+$LogicalCores = [System.Environment]::ProcessorCount
+# Usaremos todos los núcleos que detecte el sistema.
+$CoresUsed    = $LogicalCores 
+$AffinityMask = [int]([Math]::Pow(2, $LogicalCores) - 1) 
+
 $ProcessName = "RobloxPlayerBeta"
-$CoresUsed   = 3
-$AffinityMask = 0x7           # CPU 0,1,2
 $LoopDelayMS = 900
 $SampleMS    = 200
 
-# --------- LÍMITES (AJUSTADOS A TU CPU/GPU) ----------
-$CpuSoftLimit = 70
-$CpuHardLimit = 85
-$CpuSpikeJump = 18
-$MemCriticalMB = 850
+# --------- LÍMITES ANTI-FREEZE (AJUSTADOS A TU OBJETIVO) ----------
+$CpuSoftLimit = 85           # Si el uso de CPU cae por debajo de 85%, el script se relaja.
+$CpuHardLimit = 95           # Si el uso de CPU supera 95%, ¡INTERVENCIÓN INMEDIATA!
+$CpuSpikeJump = 25           # Permite un salto de carga de hasta 25% antes de actuar.
+$MemCriticalMB = 500         # Si queda menos de 500 MB de RAM libre, actúa.
+
+$PauseDurationBase = 35      # <--- CLAVE ANTI-FREEZE: Micro-pausa base (35ms es casi imperceptible)
 
 # --------- IA / ADAPTACIÓN ----------
 $StateFile = "$PSScriptRoot\Roblox_AI_State.json"
@@ -28,12 +35,10 @@ $AI = @{
 }
 
 if (Test-Path $StateFile) {
-    try {
-        $AI = Get-Content $StateFile | ConvertFrom-Json
-    } catch {}
+    try { $AI = Get-Content $StateFile | ConvertFrom-Json } catch {}
 }
 
-# --------- FUNCIONES ----------
+# --------- FUNCIONES ESTABLES ----------
 function Clamp {
     param(
         [double]$Value,
@@ -47,12 +52,16 @@ function Clamp {
 
 function Get-CpuUsage {
     param($Process, $Cores)
-
+    
+    # Previene división por cero y refresca el objeto de proceso
+    $Process.Refresh()
     $t1 = $Process.TotalProcessorTime.TotalMilliseconds
     Start-Sleep -Milliseconds $SampleMS
     $Process.Refresh()
     $t2 = $Process.TotalProcessorTime.TotalMilliseconds
 
+    # Calculo de uso real
+    $Cores = if ($Cores -eq 0) { 1 } else { $Cores }
     return (($t2 - $t1) / ($SampleMS * $Cores)) * 100
 }
 
@@ -69,33 +78,45 @@ while ($true) {
         continue
     }
 
-    # Afinidad fija
-    if ($p.ProcessorAffinity -ne $AffinityMask) {
-        $p.ProcessorAffinity = $AffinityMask
-    }
+    # PRIORIDAD Y AFINIDAD: Aplicación segura
+    try {
+        if ($p.ProcessorAffinity -ne $AffinityMask) {
+            $p.ProcessorAffinity = $AffinityMask
+        }
+        if ($p.PriorityClass -ne "BelowNormal") {
+            $p.PriorityClass = "BelowNormal"
+        }
+    } catch {}
 
-    # Prioridad base
-    if ($p.PriorityClass -ne "BelowNormal") {
-        $p.PriorityClass = "BelowNormal"
-    }
-
-    # CPU REAL
-    $Cpu = Get-CpuUsage $p $CoresUsed
+    # OBTENER ESTADO
+    $Cpu = [math]::Round((Get-CpuUsage $p $CoresUsed), 1)
     $CpuHistory += $Cpu
     if ($CpuHistory.Count -gt 6) { $CpuHistory = $CpuHistory[-6..-1] }
 
-    # MEMORIA
-    $MemMB = [math]::Round($p.WorkingSet64 / 1MB)
-
+    $freeMem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024 # Memoria LIBRE
+    
     # DETECCIÓN DE SPIKE
     $Spike = ($Cpu - $LastCpu) -gt $CpuSpikeJump
 
     # ---- LÓGICA ANTI-FREEZE ----
-    if ($Cpu -gt $CpuHardLimit -or $Spike -or $MemMB -gt $MemCriticalMB) {
-
-        $p.PriorityClass = "Idle"
-        Start-Sleep -Milliseconds (120 * $AI.Sensitivity)
-
+    if ($Cpu -gt $CpuHardLimit -or $Spike -or $freeMem -lt $MemCriticalMB) {
+        
+        # CÁLCULO DE PAUSA ADAPTATIVA (Basado en la IA)
+        $PauseMS = [int]($PauseDurationBase * $AI.Aggression * (1 - $AI.Confidence))
+        
+        # INTERVENCIÓN FUERTE (¡SOLO SI LA PAUSA ES RENTABLE!)
+        if ($PauseMS -gt 15) { 
+            # Si no hay DLLs de suspensión, solo bajamos la prioridad
+            try { 
+                $p.PriorityClass = "Idle"
+                Start-Sleep -Milliseconds $PauseMS 
+            } catch {
+                # Esta es la parte CLAVE del Anti-Freeze (si tienes permisos)
+                # Esta parte necesita el código Add-Type del script original que quitaste.
+                # Si no lo tienes, usamos el método simple de "Idle" Priority.
+            }
+        }
+        
         $AI.FreezeCount++
         $AI.Confidence = Clamp ([double]($AI.Confidence - 0.04)) 0.3 1.0
         $AI.Aggression = Clamp ([double]($AI.Aggression + 0.06)) 0.7 1.6
