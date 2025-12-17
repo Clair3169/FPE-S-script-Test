@@ -1,97 +1,93 @@
 local Workspace = game:GetService("Workspace")
 
--- CONFIGURACIÓN VISUAL
+-- CONFIGURACIÓN
 local CARPETA_OBJETIVO = "EventPresents"
 local NOMBRE_CARPETA_CACHE = "EventoCache"
-local COLOR_GUI = Color3.fromRGB(0, 255, 127) -- Verde brillante
-local TAMANO_GUI = UDim2.new(2, 0, 2, 0) -- Tamaño mediano-pequeño (2 studs)
-local ALTURA = Vector3.new(0, 2.5, 0) -- Altura sobre el objeto
+local COLOR_GUI = Color3.fromRGB(0, 255, 127) 
+local TAMANO_GUI = UDim2.new(1.5, 0, 1.5, 0)
+local OFFSET_ADICIONAL = 2.5 
 
--- 1. PREPARACIÓN DE LA CARPETA FÍSICA DE CACHÉ
--- Creamos la carpeta donde se guardarán físicamente los GUIs
-local carpetaCache = Workspace:FindFirstChild(NOMBRE_CARPETA_CACHE)
-if not carpetaCache then
-	carpetaCache = Instance.new("Folder")
-	carpetaCache.Name = NOMBRE_CARPETA_CACHE
-	carpetaCache.Parent = Workspace
-end
+-- Crear carpeta de caché física (EventoCache)
+local carpetaCache = Workspace:FindFirstChild(NOMBRE_CARPETA_CACHE) or Instance.new("Folder")
+carpetaCache.Name = NOMBRE_CARPETA_CACHE
+carpetaCache.Parent = Workspace
 
--- 2. TABLA LÓGICA (EL CEREBRO DEL SCRIPT)
--- Esta tabla relaciona: [Modelo Real] = [BillboardGui en la Cache]
 local memoriaGuis = {}
-
 local carpetaEventos = Workspace:WaitForChild(CARPETA_OBJETIVO)
 
--------------------------------------------------------------------------
--- FUNCIONES PRINCIPALES
--------------------------------------------------------------------------
+-- Cálculo de posición basado en el volumen del objeto
+local function obtenerOffset(objeto)
+	local altura = 0
+	if objeto:IsA("Model") then
+		local _, size = objeto:GetBoundingBox()
+		altura = size.Y / 2
+	elseif objeto:IsA("BasePart") then
+		altura = objeto.Size.Y / 2
+	end
+	return Vector3.new(0, altura + OFFSET_ADICIONAL, 0)
+end
 
-local function crearBillboard(modelo)
-	-- Verificamos si ya existe en memoria para no duplicar
-	if memoriaGuis[modelo] then return end
-
-	-- Creación del BillboardGui
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "Gui_De_" .. modelo.Name -- Nombre referencial
-	billboard.Size = TAMANO_GUI
-	billboard.StudsOffset = ALTURA
-	billboard.AlwaysOnTop = true
+local function crearBillboard(objeto)
+	if memoriaGuis[objeto] then return end
 	
-	-- [CLAVE DEL SISTEMA]
-	-- Parent: Se guarda en tu carpeta 'EventoCache'
-	-- Adornee: Se pega visualmente al modelo en 'EventPresents'
-	billboard.Parent = carpetaCache 
-	billboard.Adornee = modelo 
+	-- Crear el BillboardGui
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "Tag_" .. objeto.Name
+	billboard.Size = TAMANO_GUI
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = objeto -- Vinculación nativa
+	billboard.Parent = carpetaCache
+	billboard.StudsOffset = obtenerOffset(objeto)
 
-	-- Diseño visual (Círculo Verde Sólido)
+	-- El Círculo (UI)
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.fromScale(1, 1)
 	frame.BackgroundColor3 = COLOR_GUI
-	frame.BackgroundTransparency = 0 -- Totalmente sólido, como pediste
+	frame.BackgroundTransparency = 0
 	frame.BorderSizePixel = 0
 	frame.Parent = billboard
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0) -- Círculo perfecto
+	corner.CornerRadius = UDim.new(1, 0)
 	corner.Parent = frame
 	
-	-- Guardamos la referencia en la tabla lógica
-	memoriaGuis[modelo] = billboard
-end
+	-- Guardar en caché
+	memoriaGuis[objeto] = billboard
 
-local function eliminarBillboard(modelo)
-	-- Buscamos si este modelo tenía un GUI asociado
-	local guiExistente = memoriaGuis[modelo]
-	
-	if guiExistente then
-		-- Lo destruimos de la carpeta EventoCache
-		guiExistente:Destroy()
-		
-		-- Borramos el registro de la memoria para mantenerla limpia
-		memoriaGuis[modelo] = nil
-	end
+	-- [EVENTO NATIVO EXTRA]
+	-- Si el objeto es destruido directamente (no movido), limpiamos también.
+	objeto.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			if memoriaGuis[objeto] then
+				memoriaGuis[objeto]:Destroy()
+				memoriaGuis[objeto] = nil
+			end
+		end
+	end)
 end
 
 -------------------------------------------------------------------------
--- CONEXIONES DE EVENTOS
+-- CONEXIONES 100% NATIVAS (EVENT-DRIVEN)
 -------------------------------------------------------------------------
 
--- Cuando entra algo nuevo a 'EventPresents'
+-- 1. Se activa SOLO cuando entra un hijo
 carpetaEventos.ChildAdded:Connect(function(hijo)
-	task.wait() -- Breve espera técnica para asegurar carga
-	if hijo:IsA("Model") or hijo:IsA("BasePart") then
-		crearBillboard(hijo)
-	end
+	task.defer(function() -- task.defer es más eficiente que wait()
+		if hijo:IsDescendantOf(Workspace) then
+			crearBillboard(hijo)
+		end
+	end)
 end)
 
--- Cuando algo sale de 'EventPresents'
+-- 2. Se activa SOLO cuando sale un hijo
 carpetaEventos.ChildRemoved:Connect(function(hijo)
-	eliminarBillboard(hijo)
+	if memoriaGuis[hijo] then
+		memoriaGuis[hijo]:Destroy()
+		memoriaGuis[hijo] = nil
+	end
 end)
 
--- Carga inicial (por si entras y ya hay cosas)
+-- 3. Carga inicial (ejecución única al iniciar)
 for _, hijo in ipairs(carpetaEventos:GetChildren()) do
-	if hijo:IsA("Model") or hijo:IsA("BasePart") then
-		crearBillboard(hijo)
-	end
+	crearBillboard(hijo)
 end
