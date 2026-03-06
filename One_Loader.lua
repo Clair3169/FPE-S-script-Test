@@ -31,9 +31,7 @@ local urls_raw = {
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Anti_VoidPart.lua",
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Auto-Block.lua",
 	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Auto_Health.lua",
-	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Auto_BuyItem.lua",
-	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/EventChristmas.lua",
-	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Luz.lua"
+	"https://raw.githubusercontent.com/Clair3169/FPE-S-script-Test/refs/heads/main/Auto_BuyItem.lua"
 }
 
 -- ----------------------------------------------------
